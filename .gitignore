@@ -1,0 +1,23 @@
+# secrets / local config
+.env
+.env.local
+
+
+# build / runtime artefacts
+dist/
+node_modules/
+coverage/
+coverage.out
+.pnpm-store/
+.gocache/
+daily_sync
+*.test
+*.out
+
+# editor / tmp
+tmp-config-*/
+.history/
+.vscode/
+.idea/
+
+
