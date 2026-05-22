@@ -1,0 +1,123 @@
+package config
+
+import (
+	"fmt"
+	"log/slog"
+	"net/url"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/kelseyhightower/envconfig"
+)
+
+const (
+	defaultFullSyncTimeout  = 6 * time.Hour
+	defaultDailySyncTimeout = 30 * time.Minute
+)
+
+type Config struct {
+	DatabaseURL         string `envconfig:"DATABASE_URL"`
+	DBUser              string `envconfig:"DB_USER"`
+	DBPassword          string `envconfig:"DB_PASSWORD"`
+	DBName              string `envconfig:"DB_NAME"`
+	DBHost              string `envconfig:"DB_HOST"`
+	DBPort              string `envconfig:"DB_PORT"`
+	DBSSLMode           string `envconfig:"DB_SSLMODE" default:"disable"`
+	DBMaxConns          int32  `envconfig:"DB_MAX_CONNECTIONS" default:"10"`
+	BackfillConcurrency int    `envconfig:"BACKFILL_CONCURRENCY" default:"10"`
+	Debug               bool   `envconfig:"DEBUG" default:"true"`
+	SyncMode            string `envconfig:"SYNC_MODE" default:"daily_sync"`
+	DailySyncTimeout    string `envconfig:"DAILY_SYNC_TIMEOUT"`
+	DebugHeartbeat      string `envconfig:"DEBUG_HEARTBEAT_INTERVAL" default:"20s"`
+}
+
+func Load() (Config, error) {
+	var cfg Config
+	if err := envconfig.Process("", &cfg); err != nil {
+		return cfg, err
+	}
+	if strings.TrimSpace(cfg.DatabaseURL) == "" {
+		databaseURL, err := cfg.buildDatabaseURL()
+		if err != nil {
+			return cfg, err
+		}
+		cfg.DatabaseURL = databaseURL
+	}
+	cfg.SyncMode = strings.ToLower(strings.TrimSpace(cfg.SyncMode))
+	switch cfg.SyncMode {
+	case "", "full", "daily_sync":
+	default:
+		return cfg, fmt.Errorf("SYNC_MODE must be one of: full, daily_sync")
+	}
+	if strings.Contains(cfg.DatabaseURL, "sslmode=disable") {
+		fmt.Fprintln(os.Stderr, "warning: database SSL is disabled — not recommended for production")
+	}
+	return cfg, nil
+}
+
+// LogValue implements slog.LogValuer so that Config can be safely logged
+// without leaking DATABASE_URL or API keys.
+func (c Config) LogValue() slog.Value {
+	return slog.GroupValue(
+		slog.Int("max_conns", int(c.DBMaxConns)),
+		slog.Int("concurrency", c.BackfillConcurrency),
+		slog.Bool("debug", c.Debug),
+	)
+}
+
+func (c Config) DailySyncTimeoutDuration() (time.Duration, error) {
+	if strings.TrimSpace(c.DailySyncTimeout) == "" {
+		if c.IsDailySync() {
+			return defaultDailySyncTimeout, nil
+		}
+		return defaultFullSyncTimeout, nil
+	}
+	return time.ParseDuration(c.DailySyncTimeout)
+}
+
+func (c Config) DebugHeartbeatDuration() (time.Duration, error) {
+	if strings.TrimSpace(c.DebugHeartbeat) == "" {
+		return 20 * time.Second, nil
+	}
+	return time.ParseDuration(c.DebugHeartbeat)
+}
+
+func (c Config) IsDailySync() bool {
+	return c.SyncMode == "daily_sync"
+}
+
+func (c Config) buildDatabaseURL() (string, error) {
+	required := map[string]string{
+		"DB_USER":     c.DBUser,
+		"DB_PASSWORD": c.DBPassword,
+		"DB_NAME":     c.DBName,
+		"DB_HOST":     c.DBHost,
+		"DB_PORT":     c.DBPort,
+	}
+
+	missing := make([]string, 0)
+	for key, value := range required {
+		if strings.TrimSpace(value) == "" {
+			missing = append(missing, key)
+		}
+	}
+	if len(missing) > 0 {
+		return "", fmt.Errorf("DATABASE_URL is required, or set DB_USER, DB_PASSWORD, DB_NAME, DB_HOST, and DB_PORT")
+	}
+
+	sslMode := strings.TrimSpace(c.DBSSLMode)
+	if sslMode == "" {
+		sslMode = "disable"
+	}
+
+	return (&url.URL{
+		Scheme: "postgres",
+		User:   url.UserPassword(c.DBUser, c.DBPassword),
+		Host:   fmt.Sprintf("%s:%s", c.DBHost, c.DBPort),
+		Path:   c.DBName,
+		RawQuery: url.Values{
+			"sslmode": []string{sslMode},
+		}.Encode(),
+	}).String(), nil
+}
