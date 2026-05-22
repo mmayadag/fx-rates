@@ -66,11 +66,15 @@ func run() int {
 	setupCtx, setupCancel := context.WithTimeout(baseCtx, setupTimeout)
 	defer setupCancel()
 
-	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
-		slog.Error("migrations failed", "error", err)
-		return 1
+	if cfg.RunMigrations {
+		if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
+			slog.Error("migrations failed", "error", err)
+			return 1
+		}
+		slog.Info("migrations applied")
+	} else {
+		slog.Info("migrations skipped", "reason", "RUN_MIGRATIONS=false")
 	}
-	slog.Info("migrations applied")
 
 	pool, err := db.NewPool(setupCtx, cfg.DatabaseURL, cfg.DBMaxConns)
 	if err != nil {

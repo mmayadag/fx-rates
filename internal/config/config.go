@@ -30,6 +30,7 @@ type Config struct {
 	SyncMode            string `envconfig:"SYNC_MODE" default:"daily_sync"`
 	DailySyncTimeout    string `envconfig:"DAILY_SYNC_TIMEOUT"`
 	DebugHeartbeat      string `envconfig:"DEBUG_HEARTBEAT_INTERVAL" default:"20s"`
+	RunMigrations       bool   `envconfig:"RUN_MIGRATIONS" default:"true"`
 }
 
 func Load() (Config, error) {
@@ -63,6 +64,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Int("max_conns", int(c.DBMaxConns)),
 		slog.Int("concurrency", c.BackfillConcurrency),
 		slog.Bool("debug", c.Debug),
+		slog.Bool("run_migrations", c.RunMigrations),
 	)
 }
 
