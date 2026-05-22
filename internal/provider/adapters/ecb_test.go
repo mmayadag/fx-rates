@@ -92,4 +92,28 @@ func TestECBParseRowEdgeCases(t *testing.T) {
 			t.Error("expected nil for unparseable rate")
 		}
 	})
+	t.Run("zero rate", func(t *testing.T) {
+		row := []string{"D", "USD", "2024-01-02", "0"}
+		if ecbParseRow(headers, row) != nil {
+			t.Error("expected nil for zero rate")
+		}
+	})
+	t.Run("negative rate", func(t *testing.T) {
+		row := []string{"D", "USD", "2024-01-02", "-1.5"}
+		if ecbParseRow(headers, row) != nil {
+			t.Error("expected nil for negative rate")
+		}
+	})
+	t.Run("NaN rate", func(t *testing.T) {
+		row := []string{"D", "USD", "2024-01-02", "NaN"}
+		if ecbParseRow(headers, row) != nil {
+			t.Error("expected nil for NaN rate")
+		}
+	})
+	t.Run("Inf rate", func(t *testing.T) {
+		row := []string{"D", "USD", "2024-01-02", "+Inf"}
+		if ecbParseRow(headers, row) != nil {
+			t.Error("expected nil for +Inf rate")
+		}
+	})
 }

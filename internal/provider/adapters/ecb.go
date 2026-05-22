@@ -5,6 +5,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -96,7 +97,7 @@ func ecbParseRow(headers, row []string) *provider.Record {
 		return nil
 	}
 	rate, err := strconv.ParseFloat(obsVal, 64)
-	if err != nil || rate == 0 {
+	if err != nil || rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 		return nil
 	}
 	dateStr := idx("TIME_PERIOD")
