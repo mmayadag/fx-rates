@@ -40,6 +40,42 @@ func TestLoadNormalizesSyncMode(t *testing.T) {
 	}
 }
 
+func TestRunMigrationsDefaultsToTrue(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost/db")
+	t.Setenv("DEBUG", "false")
+	old, hadOld := os.LookupEnv("RUN_MIGRATIONS")
+	os.Unsetenv("RUN_MIGRATIONS")
+	t.Cleanup(func() {
+		if hadOld {
+			os.Setenv("RUN_MIGRATIONS", old)
+		} else {
+			os.Unsetenv("RUN_MIGRATIONS")
+		}
+	})
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !cfg.RunMigrations {
+		t.Fatalf("RunMigrations = false, want true (default)")
+	}
+}
+
+func TestRunMigrationsCanBeDisabled(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost/db")
+	t.Setenv("RUN_MIGRATIONS", "false")
+	t.Setenv("DEBUG", "false")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.RunMigrations {
+		t.Fatalf("RunMigrations = true, want false")
+	}
+}
+
 func TestLoadRejectsInvalidSyncMode(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost/db")
 	t.Setenv("SYNC_MODE", "weekly")
