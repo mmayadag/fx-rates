@@ -32,11 +32,7 @@ DAILY_SYNC_TIMEOUT=30m
 DEBUG_HEARTBEAT_INTERVAL=20s
 ```
 
-Copy one of the templates to `.env` if you want a starting point.
-
-- [`.env.template`](./.env.template)
-- [`.env.daily_sync.template`](./.env.daily_sync.template)
-- [`.env.backfill.template`](./.env.backfill.template)
+Copy [`.env.template`](./.env.template) to `.env` and edit the values. Mode-specific options (`SYNC_MODE`, `DAILY_SYNC_TIMEOUT`, etc.) are documented inline in the template.
 
 `DB_SSLMODE` should typically be `require` in production. `DATABASE_URL` is still accepted as a backward-compatible alternative, but the split `DB_*` variables are the primary configuration path. No provider credentials are needed in ECB-only mode. `currencyapi.com` credentials are also not used here because `CURAPI` rows are written by another API, not by this service.
 
@@ -47,7 +43,8 @@ Copy one of the templates to `.env` if you want a starting point.
 Typical local flow:
 
 ```bash
-cp .env.daily_sync.template .env
+cp .env.template .env
+# edit .env: set SYNC_MODE=daily_sync for a quick local refresh
 make local-db-up
 make local-run
 ```

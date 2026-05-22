@@ -67,7 +67,8 @@ validate-fx:
 
 daily-sync-example:
 	@printf '%s\n' \
-		'cp .env.daily_sync.template .env' \
+		'cp .env.template .env' \
+		'# edit .env: set SYNC_MODE=daily_sync' \
 		'make local-run' \
 		'make run'
 
