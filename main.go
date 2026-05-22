@@ -76,7 +76,13 @@ func run() int {
 		slog.Info("migrations skipped", "reason", "RUN_MIGRATIONS=false")
 	}
 
-	pool, err := db.NewPool(setupCtx, cfg.DatabaseURL, cfg.DBMaxConns)
+	pool, err := db.NewPool(setupCtx, cfg.DatabaseURL, db.PoolOptions{
+		MaxConns:          cfg.DBMaxConns,
+		MinConns:          cfg.DBMinConns,
+		MaxConnLifetime:   cfg.DBMaxConnLifetime,
+		MaxConnIdleTime:   cfg.DBMaxConnIdleTime,
+		HealthCheckPeriod: cfg.DBHealthCheckPeriod,
+	})
 	if err != nil {
 		slog.Error("pool init failed", "error", err)
 		return 1

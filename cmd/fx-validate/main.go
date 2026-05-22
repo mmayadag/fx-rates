@@ -58,7 +58,13 @@ func main() {
 	}
 
 	ctx := context.Background()
-	pool, err := db.NewPool(ctx, appCfg.DatabaseURL, appCfg.DBMaxConns)
+	pool, err := db.NewPool(ctx, appCfg.DatabaseURL, db.PoolOptions{
+		MaxConns:          appCfg.DBMaxConns,
+		MinConns:          appCfg.DBMinConns,
+		MaxConnLifetime:   appCfg.DBMaxConnLifetime,
+		MaxConnIdleTime:   appCfg.DBMaxConnIdleTime,
+		HealthCheckPeriod: appCfg.DBHealthCheckPeriod,
+	})
 	if err != nil {
 		exitErr(err)
 	}
