@@ -35,6 +35,7 @@ type Config struct {
 	DailySyncTimeout    string        `envconfig:"DAILY_SYNC_TIMEOUT"`
 	DebugHeartbeat      string        `envconfig:"DEBUG_HEARTBEAT_INTERVAL" default:"20s"`
 	RunMigrations       bool          `envconfig:"RUN_MIGRATIONS" default:"true"`
+	LogLevel            string        `envconfig:"LOG_LEVEL"`
 }
 
 func Load() (Config, error) {
@@ -54,6 +55,12 @@ func Load() (Config, error) {
 	case "", "full", "daily_sync":
 	default:
 		return cfg, fmt.Errorf("SYNC_MODE must be one of: full, daily_sync")
+	}
+	cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
+	switch cfg.LogLevel {
+	case "", "debug", "info", "warn", "warning", "error":
+	default:
+		return cfg, fmt.Errorf("LOG_LEVEL must be one of: debug, info, warn, error")
 	}
 	if strings.Contains(cfg.DatabaseURL, "sslmode=disable") {
 		fmt.Fprintln(os.Stderr, "warning: database SSL is disabled — not recommended for production")
@@ -91,6 +98,25 @@ func (c Config) DebugHeartbeatDuration() (time.Duration, error) {
 
 func (c Config) IsDailySync() bool {
 	return c.SyncMode == "daily_sync"
+}
+
+// SlogLevel returns the configured logging level.
+// Falls back to Debug-derived level (debug if Debug, else info) when LOG_LEVEL is unset.
+func (c Config) SlogLevel() slog.Level {
+	switch c.LogLevel {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	}
+	if c.Debug {
+		return slog.LevelDebug
+	}
+	return slog.LevelInfo
 }
 
 func (c Config) buildDatabaseURL() (string, error) {
