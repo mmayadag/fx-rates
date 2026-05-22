@@ -264,6 +264,10 @@ func TestLoadAppliesRuntimeDefaults(t *testing.T) {
 	t.Setenv("DB_PORT", "5432")
 	t.Setenv("DB_SSLMODE", "disable")
 	unsetEnvForTest(t, "DB_MAX_CONNECTIONS")
+	unsetEnvForTest(t, "DB_MIN_CONNECTIONS")
+	unsetEnvForTest(t, "DB_MAX_CONN_LIFETIME")
+	unsetEnvForTest(t, "DB_MAX_CONN_IDLE_TIME")
+	unsetEnvForTest(t, "DB_HEALTH_CHECK_PERIOD")
 	unsetEnvForTest(t, "BACKFILL_CONCURRENCY")
 	unsetEnvForTest(t, "DEBUG")
 	unsetEnvForTest(t, "SYNC_MODE")
@@ -276,6 +280,18 @@ func TestLoadAppliesRuntimeDefaults(t *testing.T) {
 	}
 	if cfg.DBMaxConns != 10 {
 		t.Fatalf("DBMaxConns = %d, want 10", cfg.DBMaxConns)
+	}
+	if cfg.DBMinConns != 5 {
+		t.Fatalf("DBMinConns = %d, want 5", cfg.DBMinConns)
+	}
+	if cfg.DBMaxConnLifetime != 30*time.Minute {
+		t.Fatalf("DBMaxConnLifetime = %v, want 30m", cfg.DBMaxConnLifetime)
+	}
+	if cfg.DBMaxConnIdleTime != 5*time.Minute {
+		t.Fatalf("DBMaxConnIdleTime = %v, want 5m", cfg.DBMaxConnIdleTime)
+	}
+	if cfg.DBHealthCheckPeriod != 30*time.Second {
+		t.Fatalf("DBHealthCheckPeriod = %v, want 30s", cfg.DBHealthCheckPeriod)
 	}
 	if cfg.BackfillConcurrency != 10 {
 		t.Fatalf("BackfillConcurrency = %d, want 10", cfg.BackfillConcurrency)

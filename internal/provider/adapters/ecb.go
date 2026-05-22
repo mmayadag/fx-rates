@@ -3,8 +3,8 @@ package adapters
 import (
 	"bufio"
 	"encoding/csv"
-	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -38,7 +38,10 @@ func (a *ECB) Fetch(after, upto time.Time) ([]provider.Record, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("ecb returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, &provider.HTTPStatusError{
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(body)),
+		}
 	}
 
 	return parseECBStream(resp.Body)
@@ -96,7 +99,7 @@ func ecbParseRow(headers, row []string) *provider.Record {
 		return nil
 	}
 	rate, err := strconv.ParseFloat(obsVal, 64)
-	if err != nil || rate == 0 {
+	if err != nil || rate <= 0 || math.IsNaN(rate) || math.IsInf(rate, 0) {
 		return nil
 	}
 	dateStr := idx("TIME_PERIOD")

@@ -17,21 +17,25 @@ const (
 )
 
 type Config struct {
-	DatabaseURL         string `envconfig:"DATABASE_URL"`
-	DBUser              string `envconfig:"DB_USER"`
-	DBPassword          string `envconfig:"DB_PASSWORD"`
-	DBName              string `envconfig:"DB_NAME"`
-	DBHost              string `envconfig:"DB_HOST"`
-	DBPort              string `envconfig:"DB_PORT"`
-	DBSSLMode           string `envconfig:"DB_SSLMODE" default:"disable"`
-	DBMaxConns          int32  `envconfig:"DB_MAX_CONNECTIONS" default:"10"`
-	BackfillConcurrency int    `envconfig:"BACKFILL_CONCURRENCY" default:"10"`
-	Debug               bool   `envconfig:"DEBUG" default:"true"`
-	SyncMode            string `envconfig:"SYNC_MODE" default:"daily_sync"`
-	DailySyncTimeout    string `envconfig:"DAILY_SYNC_TIMEOUT"`
-	DebugHeartbeat      string `envconfig:"DEBUG_HEARTBEAT_INTERVAL" default:"20s"`
-	RunMigrations       bool   `envconfig:"RUN_MIGRATIONS" default:"true"`
-	LogLevel            string `envconfig:"LOG_LEVEL"`
+	DatabaseURL         string        `envconfig:"DATABASE_URL"`
+	DBUser              string        `envconfig:"DB_USER"`
+	DBPassword          string        `envconfig:"DB_PASSWORD"`
+	DBName              string        `envconfig:"DB_NAME"`
+	DBHost              string        `envconfig:"DB_HOST"`
+	DBPort              string        `envconfig:"DB_PORT"`
+	DBSSLMode           string        `envconfig:"DB_SSLMODE" default:"disable"`
+	DBMaxConns          int32         `envconfig:"DB_MAX_CONNECTIONS" default:"10"`
+	DBMinConns          int32         `envconfig:"DB_MIN_CONNECTIONS" default:"5"`
+	DBMaxConnLifetime   time.Duration `envconfig:"DB_MAX_CONN_LIFETIME" default:"30m"`
+	DBMaxConnIdleTime   time.Duration `envconfig:"DB_MAX_CONN_IDLE_TIME" default:"5m"`
+	DBHealthCheckPeriod time.Duration `envconfig:"DB_HEALTH_CHECK_PERIOD" default:"30s"`
+	BackfillConcurrency int           `envconfig:"BACKFILL_CONCURRENCY" default:"10"`
+	Debug               bool          `envconfig:"DEBUG" default:"true"`
+	SyncMode            string        `envconfig:"SYNC_MODE" default:"daily_sync"`
+	DailySyncTimeout    string        `envconfig:"DAILY_SYNC_TIMEOUT"`
+	DebugHeartbeat      string        `envconfig:"DEBUG_HEARTBEAT_INTERVAL" default:"20s"`
+	RunMigrations       bool          `envconfig:"RUN_MIGRATIONS" default:"true"`
+	LogLevel            string        `envconfig:"LOG_LEVEL"`
 }
 
 func Load() (Config, error) {

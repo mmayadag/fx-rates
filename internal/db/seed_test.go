@@ -21,7 +21,7 @@ func testDBPool(t *testing.T) string {
 func TestSeedPreservesCURAPIAndRemovesStaleProviders(t *testing.T) {
 	dsn := testDBPool(t)
 
-	pool, err := NewPool(context.Background(), dsn, 5)
+	pool, err := NewPool(context.Background(), dsn, PoolOptions{MaxConns: 5})
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
