@@ -3,7 +3,6 @@ package adapters
 import (
 	"bufio"
 	"encoding/csv"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -38,7 +37,10 @@ func (a *ECB) Fetch(after, upto time.Time) ([]provider.Record, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
-		return nil, fmt.Errorf("ecb returned status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, &provider.HTTPStatusError{
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(body)),
+		}
 	}
 
 	return parseECBStream(resp.Body)
