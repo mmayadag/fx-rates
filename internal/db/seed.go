@@ -41,8 +41,26 @@ func seedProviders(ctx context.Context, pool *pgxpool.Pool) error {
 		return fmt.Errorf("read seed dir: %w", err)
 	}
 
-	if _, err := pool.Exec(ctx, `DELETE FROM providers WHERE key NOT IN ('ECB', 'CURAPI')`); err != nil {
+	rows, err := pool.Query(ctx, `DELETE FROM providers WHERE key NOT IN ('ECB', 'CURAPI') RETURNING key`)
+	if err != nil {
 		return fmt.Errorf("delete stale providers: %w", err)
+	}
+	var staleKeys []string
+	for rows.Next() {
+		var k string
+		if err := rows.Scan(&k); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan stale provider key: %w", err)
+		}
+		staleKeys = append(staleKeys, k)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate stale providers: %w", err)
+	}
+	if len(staleKeys) > 0 {
+		slices.Sort(staleKeys)
+		slog.Warn("seed: stale providers removed", "count", len(staleKeys), "keys", staleKeys)
 	}
 
 	for _, entry := range entries {
