@@ -14,6 +14,8 @@ import (
 	"github.com/mmayadag/fx-rates/internal/scheduler"
 )
 
+const setupTimeout = 2 * time.Minute
+
 func main() {
 	os.Exit(run())
 }
@@ -44,10 +46,10 @@ func run() int {
 	logger = logger.With("run_id", runID)
 	slog.SetDefault(logger)
 
-	baseCtx := context.Background()
-	ctx, cancel := context.WithTimeout(baseCtx, syncTimeout)
-	defer cancel()
-	slog.Info("sync timeout configured", "timeout", syncTimeout.String())
+	baseCtx, baseCancel := context.WithCancel(context.Background())
+	defer baseCancel()
+
+	slog.Info("timeouts configured", "setup", setupTimeout.String(), "sync", syncTimeout.String())
 
 	exitCode := 0
 	stopSignals := make(chan os.Signal, 1)
@@ -58,8 +60,11 @@ func run() int {
 		sig := <-stopSignals
 		slog.Warn("shutdown requested", "signal", sig.String())
 		exitCode = 130
-		cancel()
+		baseCancel()
 	}()
+
+	setupCtx, setupCancel := context.WithTimeout(baseCtx, setupTimeout)
+	defer setupCancel()
 
 	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
 		slog.Error("migrations failed", "error", err)
@@ -67,21 +72,25 @@ func run() int {
 	}
 	slog.Info("migrations applied")
 
-	pool, err := db.NewPool(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
+	pool, err := db.NewPool(setupCtx, cfg.DatabaseURL, cfg.DBMaxConns)
 	if err != nil {
 		slog.Error("pool init failed", "error", err)
 		return 1
 	}
 	defer pool.Close()
 
-	if err := db.Seed(ctx, pool); err != nil {
+	if err := db.Seed(setupCtx, pool); err != nil {
 		slog.Error("seed failed", "error", err)
 		return 1
 	}
 	slog.Info("seed complete")
+	setupCancel()
+
+	syncCtx, syncCancel := context.WithTimeout(baseCtx, syncTimeout)
+	defer syncCancel()
 
 	slog.Info("sync job started")
-	if err := scheduler.BackfillAll(ctx, pool, scheduler.Options{
+	if err := scheduler.BackfillAll(syncCtx, pool, scheduler.Options{
 		Concurrency:       cfg.BackfillConcurrency,
 		Debug:             cfg.Debug,
 		HeartbeatInterval: heartbeatInterval,
