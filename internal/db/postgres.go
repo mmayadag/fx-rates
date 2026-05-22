@@ -7,19 +7,37 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewPool(ctx context.Context, databaseURL string, maxConns int32) (*pgxpool.Pool, error) {
+// PoolOptions controls pgxpool connection settings.
+// Zero values fall back to pgx defaults; non-zero values override them.
+type PoolOptions struct {
+	MaxConns          int32
+	MinConns          int32
+	MaxConnLifetime   time.Duration
+	MaxConnIdleTime   time.Duration
+	HealthCheckPeriod time.Duration
+}
+
+func NewPool(ctx context.Context, databaseURL string, opts PoolOptions) (*pgxpool.Pool, error) {
 	config, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, err
 	}
 
-	if maxConns > 0 {
-		config.MaxConns = maxConns
+	if opts.MaxConns > 0 {
+		config.MaxConns = opts.MaxConns
 	}
-	config.MinConns = 5
-	config.MaxConnLifetime = 30 * time.Minute
-	config.MaxConnIdleTime = 5 * time.Minute
-	config.HealthCheckPeriod = 30 * time.Second
+	if opts.MinConns > 0 {
+		config.MinConns = opts.MinConns
+	}
+	if opts.MaxConnLifetime > 0 {
+		config.MaxConnLifetime = opts.MaxConnLifetime
+	}
+	if opts.MaxConnIdleTime > 0 {
+		config.MaxConnIdleTime = opts.MaxConnIdleTime
+	}
+	if opts.HealthCheckPeriod > 0 {
+		config.HealthCheckPeriod = opts.HealthCheckPeriod
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

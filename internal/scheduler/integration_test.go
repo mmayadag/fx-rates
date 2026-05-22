@@ -23,7 +23,7 @@ func testPool(t *testing.T) interface{ Close() } {
 		t.Fatalf("migrations failed: %v", err)
 	}
 
-	pool, err := db.NewPool(context.Background(), dsn, 5)
+	pool, err := db.NewPool(context.Background(), dsn, db.PoolOptions{MaxConns: 5})
 	if err != nil {
 		t.Fatalf("connecting to test DB: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestBulkUpsertRatesIntegration(t *testing.T) {
 
 	// Re-obtain as pgxpool.Pool via the db package
 	dsn := os.Getenv("TEST_DATABASE_URL")
-	pgpool, err := db.NewPool(context.Background(), dsn, 5)
+	pgpool, err := db.NewPool(context.Background(), dsn, db.PoolOptions{MaxConns: 5})
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestBackfillProviderIntegration(t *testing.T) {
 		t.Fatalf("migrations failed: %v", err)
 	}
 
-	pgpool, err := db.NewPool(context.Background(), dsn, 5)
+	pgpool, err := db.NewPool(context.Background(), dsn, db.PoolOptions{MaxConns: 5})
 	if err != nil {
 		t.Fatalf("pool: %v", err)
 	}

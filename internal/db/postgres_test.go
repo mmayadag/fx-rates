@@ -7,7 +7,7 @@ import (
 )
 
 func TestNewPoolRejectsInvalidURL(t *testing.T) {
-	_, err := NewPool(context.Background(), ":", 10)
+	_, err := NewPool(context.Background(), ":", PoolOptions{MaxConns: 10})
 	if err == nil {
 		t.Fatal("expected error for invalid database URL")
 	}
