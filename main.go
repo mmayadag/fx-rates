@@ -15,12 +15,25 @@ import (
 )
 
 func main() {
+	os.Exit(run())
+}
+
+func run() int {
 	cfg, err := config.Load()
-	must(err)
+	if err != nil {
+		slog.Error("config load failed", "error", err)
+		return 1
+	}
 	syncTimeout, err := cfg.DailySyncTimeoutDuration()
-	must(err)
+	if err != nil {
+		slog.Error("invalid sync timeout", "error", err)
+		return 1
+	}
 	heartbeatInterval, err := cfg.DebugHeartbeatDuration()
-	must(err)
+	if err != nil {
+		slog.Error("invalid heartbeat interval", "error", err)
+		return 1
+	}
 
 	level := slog.LevelInfo
 	if cfg.Debug {
@@ -36,7 +49,7 @@ func main() {
 	defer cancel()
 	slog.Info("sync timeout configured", "timeout", syncTimeout.String())
 
-	var exitCode int
+	exitCode := 0
 	stopSignals := make(chan os.Signal, 1)
 	signal.Notify(stopSignals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stopSignals)
@@ -50,17 +63,20 @@ func main() {
 
 	if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
 		slog.Error("migrations failed", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	slog.Info("migrations applied")
 
 	pool, err := db.NewPool(ctx, cfg.DatabaseURL, cfg.DBMaxConns)
-	must(err)
+	if err != nil {
+		slog.Error("pool init failed", "error", err)
+		return 1
+	}
 	defer pool.Close()
 
 	if err := db.Seed(ctx, pool); err != nil {
 		slog.Error("seed failed", "error", err)
-		os.Exit(1)
+		return 1
 	}
 	slog.Info("seed complete")
 
@@ -79,12 +95,5 @@ func main() {
 		slog.Info("sync job completed")
 	}
 
-	os.Exit(exitCode)
-}
-
-func must(err error) {
-	if err != nil {
-		slog.Error("fatal", "error", err)
-		os.Exit(1)
-	}
+	return exitCode
 }
