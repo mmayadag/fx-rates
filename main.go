@@ -37,12 +37,8 @@ func run() int {
 		return 1
 	}
 
-	level := slog.LevelInfo
-	if cfg.Debug {
-		level = slog.LevelDebug
-	}
 	runID := fmt.Sprintf("%d", time.Now().UnixMilli())
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.SlogLevel()}))
 	logger = logger.With("run_id", runID)
 	slog.SetDefault(logger)
 

@@ -40,6 +40,42 @@ func TestLoadNormalizesSyncMode(t *testing.T) {
 	}
 }
 
+func TestSlogLevel(t *testing.T) {
+	tests := []struct {
+		name     string
+		logLevel string
+		debug    bool
+		want     slog.Level
+	}{
+		{"empty + debug=true → debug", "", true, slog.LevelDebug},
+		{"empty + debug=false → info", "", false, slog.LevelInfo},
+		{"debug overrides debug=false", "debug", false, slog.LevelDebug},
+		{"info overrides debug=true", "info", true, slog.LevelInfo},
+		{"warn", "warn", false, slog.LevelWarn},
+		{"warning alias", "warning", false, slog.LevelWarn},
+		{"error", "error", false, slog.LevelError},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{LogLevel: tt.logLevel, Debug: tt.debug}
+			if got := cfg.SlogLevel(); got != tt.want {
+				t.Fatalf("SlogLevel() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestLoadRejectsInvalidLogLevel(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost/db")
+	t.Setenv("LOG_LEVEL", "verbose")
+	t.Setenv("DEBUG", "false")
+
+	_, err := Load()
+	if err == nil || !strings.Contains(err.Error(), "LOG_LEVEL must be one of") {
+		t.Fatalf("expected LOG_LEVEL error, got %v", err)
+	}
+}
+
 func TestRunMigrationsDefaultsToTrue(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost/db")
 	t.Setenv("DEBUG", "false")
