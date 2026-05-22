@@ -106,6 +106,7 @@ For recurring production runs, schedule `SYNC_MODE=daily_sync` shortly after the
 
 ## Reference Docs
 
+- [docs/database-schema.md](./docs/database-schema.md)
 - [docs/providers.md](./docs/providers.md)
 - [docs/provider-credentials.md](./docs/provider-credentials.md)
 - [docs/currencies.md](./docs/currencies.md)
