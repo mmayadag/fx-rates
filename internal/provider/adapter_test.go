@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"syscall"
 	"testing"
@@ -197,6 +198,17 @@ func TestIsTransient(t *testing.T) {
 		{"other", errors.New("other"), false},
 		{"net.Error timeout", &mockNetError{timeout: true}, true},
 		{"net.Error non-timeout", &mockNetError{timeout: false}, false},
+		{"http 200", &HTTPStatusError{StatusCode: 200}, false},
+		{"http 400", &HTTPStatusError{StatusCode: 400}, false},
+		{"http 404", &HTTPStatusError{StatusCode: 404}, false},
+		{"http 429", &HTTPStatusError{StatusCode: 429}, true},
+		{"http 500", &HTTPStatusError{StatusCode: 500}, true},
+		{"http 502", &HTTPStatusError{StatusCode: 502}, true},
+		{"http 503", &HTTPStatusError{StatusCode: 503}, true},
+		{"http 504", &HTTPStatusError{StatusCode: 504}, true},
+		{"http 599", &HTTPStatusError{StatusCode: 599}, true},
+		{"http 600", &HTTPStatusError{StatusCode: 600}, false},
+		{"wrapped http 503", fmt.Errorf("fetch failed: %w", &HTTPStatusError{StatusCode: 503}), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

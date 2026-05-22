@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -55,7 +56,22 @@ var transientErrors = []error{
 	io.EOF,
 }
 
-// IsTransient returns true for network errors that should be retried.
+// HTTPStatusError represents a non-2xx HTTP response from an upstream provider.
+// Adapters should return this (rather than fmt.Errorf) so the retry layer can
+// distinguish transient (5xx, 429) from permanent (4xx) statuses.
+type HTTPStatusError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e.Body == "" {
+		return fmt.Sprintf("upstream returned http %d", e.StatusCode)
+	}
+	return fmt.Sprintf("upstream returned http %d: %s", e.StatusCode, e.Body)
+}
+
+// IsTransient returns true for errors that should be retried.
 func IsTransient(err error) bool {
 	if err == nil {
 		return false
@@ -64,6 +80,10 @@ func IsTransient(err error) bool {
 		if errors.Is(err, te) {
 			return true
 		}
+	}
+	var statusErr *HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.StatusCode == 429 || (statusErr.StatusCode >= 500 && statusErr.StatusCode < 600)
 	}
 	var netErr net.Error
 	if errors.As(err, &netErr) {
