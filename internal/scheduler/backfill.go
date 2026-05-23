@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mmayadag/fx-rates/internal/db/sqlcgen"
 	"github.com/mmayadag/fx-rates/internal/domain"
 	"github.com/mmayadag/fx-rates/internal/provider"
 	"github.com/mmayadag/fx-rates/internal/registry"
@@ -129,7 +130,7 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	}
 	mu.Unlock()
 
-	providerStart := time.Now()
+	providerStart := time.Now().UTC()
 	result := BackfillProvider(ctx, pool, entry.Key, entry.Adapter, coverageStartMap[entry.Key], lastSyncedMap[entry.Key], opts.DailySync, func(event provider.FetchEvent) {
 		mu.Lock()
 		state := running[entry.Key]
@@ -193,7 +194,9 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 		}
 	}
 
-	emitProviderMetric(result, opts.DailySync, time.Since(providerStart))
+	providerEnd := time.Now().UTC()
+	emitProviderMetric(result, opts.DailySync, providerEnd.Sub(providerStart))
+	recordSyncRun(pool, result, opts.DailySync, providerStart, providerEnd)
 	logRunSummary(summary, false)
 	if ctx.Err() != nil {
 		emitRunMetric(snapshot, opts.DailySync, time.Since(runStart), "interrupted")
@@ -270,6 +273,40 @@ func snapshotSummary(mu *sync.Mutex, summary RunSummary) RunSummary {
 	snapshot := summary
 	snapshot.FailedProviderNames = append([]string(nil), summary.FailedProviderNames...)
 	return snapshot
+}
+
+// recordSyncRun persists a per-provider run row to the sync_runs audit table.
+// Failure is logged but does not affect the backfill outcome — the audit trail
+// is best-effort. Uses a fresh background context so it survives a parent
+// ctx that has just been cancelled (timeout/interrupt).
+func recordSyncRun(pool *pgxpool.Pool, result BackfillResult, dailySync bool, startedAt, finishedAt time.Time) {
+	mode := "full"
+	if dailySync {
+		mode = "daily_sync"
+	}
+	var errMsg *string
+	if result.Error != "" {
+		s := result.Error
+		errMsg = &s
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	err := sqlcgen.New(pool).RecordSyncRun(ctx, sqlcgen.RecordSyncRunParams{
+		Provider:     result.Provider,
+		Mode:         mode,
+		Status:       result.Status,
+		StartedAt:    sqlcgen.TimeToTimestamptz(startedAt),
+		FinishedAt:   sqlcgen.TimeToTimestamptz(finishedAt),
+		RowsFetched:  int32(result.Fetched),
+		RowsInserted: int32(result.Inserted),
+		RowsSkipped:  int32(result.Skipped),
+		ErrorMessage: errMsg,
+	})
+	if err != nil {
+		slog.Warn("sync_runs: record failed (audit only)", "provider", result.Provider, "err", err)
+	}
 }
 
 func logRunSummary(summary RunSummary, interrupted bool) {

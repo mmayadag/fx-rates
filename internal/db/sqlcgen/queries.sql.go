@@ -167,6 +167,33 @@ func (q *Queries) GetLastSyncedForProvider(ctx context.Context, provider string)
 	return last_synced, err
 }
 
+const getLatestSyncRun = `-- name: GetLatestSyncRun :one
+SELECT id, provider, mode, status, started_at, finished_at,
+       rows_fetched, rows_inserted, rows_skipped, error_message
+FROM sync_runs
+WHERE provider = $1
+ORDER BY finished_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestSyncRun(ctx context.Context, provider string) (SyncRun, error) {
+	row := q.db.QueryRow(ctx, getLatestSyncRun, provider)
+	var i SyncRun
+	err := row.Scan(
+		&i.ID,
+		&i.Provider,
+		&i.Mode,
+		&i.Status,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.RowsFetched,
+		&i.RowsInserted,
+		&i.RowsSkipped,
+		&i.ErrorMessage,
+	)
+	return i, err
+}
+
 const listProviderKeys = `-- name: ListProviderKeys :many
 SELECT key FROM providers ORDER BY key
 `
@@ -227,6 +254,41 @@ func (q *Queries) ListProviders(ctx context.Context) ([]Provider, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const recordSyncRun = `-- name: RecordSyncRun :exec
+INSERT INTO sync_runs (
+    provider, mode, status, started_at, finished_at,
+    rows_fetched, rows_inserted, rows_skipped, error_message
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+`
+
+type RecordSyncRunParams struct {
+	Provider     string
+	Mode         string
+	Status       string
+	StartedAt    pgtype.Timestamptz
+	FinishedAt   pgtype.Timestamptz
+	RowsFetched  int32
+	RowsInserted int32
+	RowsSkipped  int32
+	ErrorMessage *string
+}
+
+func (q *Queries) RecordSyncRun(ctx context.Context, arg RecordSyncRunParams) error {
+	_, err := q.db.Exec(ctx, recordSyncRun,
+		arg.Provider,
+		arg.Mode,
+		arg.Status,
+		arg.StartedAt,
+		arg.FinishedAt,
+		arg.RowsFetched,
+		arg.RowsInserted,
+		arg.RowsSkipped,
+		arg.ErrorMessage,
+	)
+	return err
 }
 
 const upsertCurrency = `-- name: UpsertCurrency :exec

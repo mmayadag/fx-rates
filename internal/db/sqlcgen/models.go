@@ -41,3 +41,16 @@ type Rate struct {
 	Rate     float64
 	Provider string
 }
+
+type SyncRun struct {
+	ID           int64
+	Provider     string
+	Mode         string
+	Status       string
+	StartedAt    pgtype.Timestamptz
+	FinishedAt   pgtype.Timestamptz
+	RowsFetched  int32
+	RowsInserted int32
+	RowsSkipped  int32
+	ErrorMessage *string
+}
