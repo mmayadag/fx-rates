@@ -1,15 +1,18 @@
 GOCACHE_DIR := $(CURDIR)/.gocache
 GO := env GOTOOLCHAIN=go1.26.2 GOCACHE='$(GOCACHE_DIR)' go
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+LDFLAGS := -s -w -X main.version=$(VERSION)
 LOCAL_TEST_COMPOSE := docker compose -f local_test/docker-compose.yml
 ENV_FILE ?= .env
 BACKFILL_CONCURRENCY ?= 10
 ENV_LOADER = set -a; if [ -f "$(ENV_FILE)" ]; then . "$(ENV_FILE)"; fi; set +a;
 
-.PHONY: help build sqlc-generate test coverage test-integration run run-daily validate-fx daily-sync-example local-run local-run-daily local-db-up local-db-down local-db-logs local-db-ps local-smoke local-smoke-daily
+.PHONY: help build release-build sqlc-generate test coverage test-integration run run-daily validate-fx daily-sync-example local-run local-run-daily local-db-up local-db-down local-db-logs local-db-ps local-smoke local-smoke-daily
 
 help:
 	@printf '%s\n' \
-		'make build             - Build all Go packages' \
+		'make build             - Build all Go packages (version stamped from git)' \
+		'make release-build     - Build a single static binary; requires VERSION=v* tag' \
 		'make sqlc-generate     - Regenerate typed query code from internal/db/queries.sql' \
 		'make test              - Run unit tests' \
 		'make coverage          - Show test coverage per package' \
@@ -28,7 +31,17 @@ help:
 		'make local-smoke-daily - Start local Postgres and run daily_sync against it'
 
 build:
-	$(GO) build ./...
+	$(GO) build -ldflags="$(LDFLAGS)" ./...
+
+release-build:
+	@if ! echo "$(VERSION)" | grep -qE '^v[0-9]'; then \
+		echo "VERSION must be a semver tag like v0.1.0 (got: $(VERSION))"; \
+		echo "Tag the release first: git tag v0.1.0; then: make release-build VERSION=v0.1.0"; \
+		exit 1; \
+	fi
+	mkdir -p dist
+	CGO_ENABLED=0 GOOS=linux $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o dist/fx-rates .
+	@echo "Built dist/fx-rates $(VERSION)"
 
 sqlc-generate:
 	@command -v sqlc >/dev/null || { echo "sqlc not found. Install: go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest"; exit 1; }
