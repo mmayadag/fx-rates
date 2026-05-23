@@ -79,6 +79,7 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	running := make(map[string]runningProvider)
 	var completed int32
 	summary := RunSummary{TotalProviders: 1}
+	runStart := time.Now()
 
 	if opts.Concurrency > 0 {
 		slog.Info("backfill: concurrency configured", "concurrency", opts.Concurrency)
@@ -115,6 +116,7 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 		summarySnapshot := snapshotSummary(&mu, summary)
 		logCancellation(ctx, &mu, running, 1, completed)
 		logRunSummary(summarySnapshot, true)
+		emitRunMetric(summarySnapshot, opts.DailySync, time.Since(runStart), "interrupted")
 		return ctx.Err()
 	}
 
@@ -127,6 +129,7 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	}
 	mu.Unlock()
 
+	providerStart := time.Now()
 	result := BackfillProvider(ctx, pool, entry.Key, entry.Adapter, coverageStartMap[entry.Key], lastSyncedMap[entry.Key], opts.DailySync, func(event provider.FetchEvent) {
 		mu.Lock()
 		state := running[entry.Key]
@@ -190,14 +193,18 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 		}
 	}
 
+	emitProviderMetric(result, opts.DailySync, time.Since(providerStart))
 	logRunSummary(summary, false)
 	if ctx.Err() != nil {
+		emitRunMetric(snapshot, opts.DailySync, time.Since(runStart), "interrupted")
 		logCancellation(ctx, &mu, running, 1, completed)
 		return ctx.Err()
 	}
 	if snapshot.FailedProviders > 0 {
+		emitRunMetric(snapshot, opts.DailySync, time.Since(runStart), "failed")
 		return fmt.Errorf("backfill failed for provider %s", entry.Key)
 	}
+	emitRunMetric(snapshot, opts.DailySync, time.Since(runStart), "success")
 	return nil
 }
 
@@ -284,6 +291,52 @@ func logRunSummary(summary RunSummary, interrupted bool) {
 		"inserted_count", summary.InsertedCount,
 		"skipped_count", summary.SkippedCount,
 		"failed_providers", summary.FailedProviderNames,
+	)
+}
+
+// emitProviderMetric emits a structured metric event for a single provider
+// after its backfill returns. The "metric" msg + "name" field form a stable
+// contract for log-based metric extractors (Loki, Datadog, Vector, etc.).
+func emitProviderMetric(result BackfillResult, dailySync bool, duration time.Duration) {
+	mode := "full"
+	if dailySync {
+		mode = "daily_sync"
+	}
+	var lastSyncedUnix int64
+	if result.LastSyncedAfter != nil {
+		lastSyncedUnix = result.LastSyncedAfter.Unix()
+	}
+	slog.Info("metric",
+		"name", "fx_rates_provider_run",
+		"provider", result.Provider,
+		"mode", mode,
+		"status", result.Status,
+		"rows_fetched", result.Fetched,
+		"rows_inserted", result.Inserted,
+		"rows_skipped", result.Skipped,
+		"duration_ms", duration.Milliseconds(),
+		"last_synced_unix", lastSyncedUnix,
+	)
+}
+
+// emitRunMetric emits a structured metric event for the overall backfill run.
+func emitRunMetric(summary RunSummary, dailySync bool, duration time.Duration, status string) {
+	mode := "full"
+	if dailySync {
+		mode = "daily_sync"
+	}
+	slog.Info("metric",
+		"name", "fx_rates_run",
+		"mode", mode,
+		"status", status,
+		"providers_total", summary.TotalProviders,
+		"providers_succeeded", summary.SucceededProviders,
+		"providers_failed", summary.FailedProviders,
+		"providers_unavailable", summary.UnavailableProviders,
+		"providers_up_to_date", summary.UpToDateProviders,
+		"rows_inserted", summary.InsertedCount,
+		"rows_skipped", summary.SkippedCount,
+		"duration_ms", duration.Milliseconds(),
 	)
 }
 
