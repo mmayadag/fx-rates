@@ -27,3 +27,8 @@ func TimePtrToDate(t *time.Time) pgtype.Date {
 	}
 	return pgtype.Date{Time: *t, Valid: true}
 }
+
+// TimeToTimestamptz converts time.Time to pgtype.Timestamptz (always Valid).
+func TimeToTimestamptz(t time.Time) pgtype.Timestamptz {
+	return pgtype.Timestamptz{Time: t, Valid: true}
+}

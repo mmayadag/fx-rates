@@ -10,6 +10,7 @@ This service reads from and writes to a single Postgres database. Four tables ho
 | `providers` | Static metadata for each upstream rate source |
 | `currencies` | ISO 4217 currency lifetimes (start/end), the canonical currency list |
 | `currency_coverages` | Per-provider currency support windows |
+| `sync_runs` | Append-only audit log of every backfill run (success or failure) |
 
 ## Conventions
 
@@ -129,6 +130,58 @@ Maintained on every successful insert batch in `bulkUpsertRates`. Used by `cmd/f
 
 ---
 
+## `sync_runs`
+
+Append-only audit table — one row per provider per backfill run. Writes are best-effort: a failure to insert here is logged at WARN but does not affect the backfill outcome.
+
+```sql
+CREATE TABLE sync_runs (
+    id            BIGSERIAL    PRIMARY KEY,
+    provider      VARCHAR(10)  NOT NULL,
+    mode          VARCHAR(20)  NOT NULL,
+    status        VARCHAR(20)  NOT NULL,
+    started_at    TIMESTAMPTZ  NOT NULL,
+    finished_at   TIMESTAMPTZ  NOT NULL,
+    rows_fetched  INTEGER      NOT NULL DEFAULT 0,
+    rows_inserted INTEGER      NOT NULL DEFAULT 0,
+    rows_skipped  INTEGER      NOT NULL DEFAULT 0,
+    error_message TEXT
+);
+
+CREATE INDEX idx_sync_runs_provider_finished ON sync_runs (provider, finished_at DESC);
+CREATE INDEX idx_sync_runs_status            ON sync_runs (status, finished_at DESC);
+```
+
+| Column | Notes |
+|---|---|
+| `mode` | `"full"` or `"daily_sync"` — matches the SYNC_MODE used for the run. |
+| `status` | One of `success`, `empty`, `error`, `unavailable`, `up_to_date`. Maps to `BackfillResult.Status`. |
+| `started_at` / `finished_at` | `TIMESTAMPTZ`, both wall-clock UTC. Use `finished_at - started_at` for duration. |
+| `error_message` | Free text, NULL on success. The first-line summary of `BackfillResult.Error`. |
+
+**Useful queries**:
+
+```sql
+-- Last successful sync per provider
+SELECT DISTINCT ON (provider) provider, finished_at, rows_inserted
+FROM sync_runs
+WHERE status = 'success'
+ORDER BY provider, finished_at DESC;
+
+-- Daily failure rate (last 30 days)
+SELECT DATE_TRUNC('day', finished_at) AS day,
+       COUNT(*) FILTER (WHERE status = 'error')   AS failures,
+       COUNT(*) FILTER (WHERE status = 'success') AS successes
+FROM sync_runs
+WHERE finished_at >= now() - interval '30 days'
+GROUP BY 1
+ORDER BY 1 DESC;
+```
+
+**Retention**: the table is append-only with no automatic cleanup. If size becomes a concern, schedule a periodic `DELETE FROM sync_runs WHERE finished_at < now() - interval '90 days'` out-of-band.
+
+The same information is also emitted to stdout as a structured `metric` log event — see `docs/metrics.md`. The DB row is the durable, queryable form; the log event is the streaming form.
+
 ## Migrations
 
 | File | Effect |
@@ -136,6 +189,7 @@ Maintained on every successful insert batch in `bulkUpsertRates`. Used by `cmd/f
 | `001_create_rates.{up,down}.sql` | `rates` + 3 indexes |
 | `002_create_providers.{up,down}.sql` | `providers` |
 | `003_create_currencies.{up,down}.sql` | `currencies` + `currency_coverages` |
+| `004_create_sync_runs.{up,down}.sql` | `sync_runs` + 2 indexes |
 
 The runner (`internal/db/migrate.go`) uses `github.com/jackc/pgx/v5` with a custom file walker — no third-party migration library. Each file is executed once; the runner keeps a tracking table to skip already-applied migrations.
 
