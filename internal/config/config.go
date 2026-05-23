@@ -36,6 +36,7 @@ type Config struct {
 	DebugHeartbeat      string        `envconfig:"DEBUG_HEARTBEAT_INTERVAL" default:"20s"`
 	RunMigrations       bool          `envconfig:"RUN_MIGRATIONS" default:"true"`
 	LogLevel            string        `envconfig:"LOG_LEVEL"`
+	DailySyncLookback   int           `envconfig:"DAILY_SYNC_LOOKBACK_DAYS" default:"7"`
 }
 
 func Load() (Config, error) {

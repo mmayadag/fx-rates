@@ -27,6 +27,9 @@ type Options struct {
 	Debug             bool
 	HeartbeatInterval time.Duration
 	DailySync         bool
+	// DailySyncLookback caps how far back a daily_sync run will reach.
+	// 0 means no cap (matches the historical no-op behaviour).
+	DailySyncLookback int
 }
 
 type BackfillResult struct {
@@ -131,7 +134,7 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	mu.Unlock()
 
 	providerStart := time.Now().UTC()
-	result := BackfillProvider(ctx, pool, entry.Key, entry.Adapter, coverageStartMap[entry.Key], lastSyncedMap[entry.Key], opts.DailySync, func(event provider.FetchEvent) {
+	result := BackfillProvider(ctx, pool, entry.Key, entry.Adapter, coverageStartMap[entry.Key], lastSyncedMap[entry.Key], opts.DailySync, opts.DailySyncLookback, func(event provider.FetchEvent) {
 		mu.Lock()
 		state := running[entry.Key]
 		state.Stage = event.Stage
@@ -378,7 +381,7 @@ func emitRunMetric(summary RunSummary, dailySync bool, duration time.Duration, s
 }
 
 // BackfillProvider fetches and stores all missing rates for one provider.
-func BackfillProvider(ctx context.Context, pool *pgxpool.Pool, key string, a provider.Adapter, coverageStart *time.Time, lastSynced *time.Time, dailySync bool, observe provider.FetchObserver) BackfillResult {
+func BackfillProvider(ctx context.Context, pool *pgxpool.Pool, key string, a provider.Adapter, coverageStart *time.Time, lastSynced *time.Time, dailySync bool, lookbackDays int, observe provider.FetchObserver) BackfillResult {
 	result := BackfillResult{Provider: key}
 	startedAt := time.Now()
 	result.LastSyncedBefore = cloneTimePtr(lastSynced)
@@ -397,7 +400,7 @@ func BackfillProvider(ctx context.Context, pool *pgxpool.Pool, key string, a pro
 		start = *after
 	}
 
-	start, startNote := adjustStartForMode(key, start, today, dailySync)
+	start, startNote := adjustStartForMode(key, start, today, dailySync, lookbackDays)
 	if startNote != "" {
 		slog.Info("backfill: adjusted start", "provider", key, "after", start, "note", startNote)
 	}
@@ -552,11 +555,18 @@ func maxTimePtr(current *time.Time, candidate *time.Time) *time.Time {
 	return cloneTimePtr(current)
 }
 
-func adjustStartForMode(key string, start, today time.Time, dailySync bool) (time.Time, string) {
+// adjustStartForMode caps a daily_sync run's start date so that an extended
+// outage doesn't force a multi-week backfill into a 30m timeout window.
+// lookbackDays = 0 disables the cap (preserves the original no-op behaviour
+// for callers that haven't opted in).
+func adjustStartForMode(key string, start, today time.Time, dailySync bool, lookbackDays int) (time.Time, string) {
 	_ = key
-	_ = today
-	if !dailySync {
+	if !dailySync || lookbackDays <= 0 {
 		return start, ""
+	}
+	floor := today.AddDate(0, 0, -lookbackDays)
+	if start.IsZero() || start.Before(floor) {
+		return floor, fmt.Sprintf("daily_sync: capped to last %d days (floor=%s)", lookbackDays, floor.Format("2006-01-02"))
 	}
 	return start, ""
 }

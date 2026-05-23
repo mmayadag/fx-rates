@@ -114,7 +114,7 @@ func TestBackfillProviderIntegration(t *testing.T) {
 		{Date: start.AddDate(0, 0, 1), Base: "EUR", Quote: "USD", Rate: 1.09},
 	}}
 
-	result := BackfillProvider(ctx, pgpool, "TEST", adapter, &start, nil, false, nil)
+	result := BackfillProvider(ctx, pgpool, "TEST", adapter, &start, nil, false, 0, nil)
 
 	if result.Status != "success" {
 		t.Errorf("status = %q, want success; error: %s", result.Status, result.Error)
@@ -124,7 +124,7 @@ func TestBackfillProviderIntegration(t *testing.T) {
 	}
 
 	// Run again — already up to date
-	result2 := BackfillProvider(ctx, pgpool, "TEST", adapter, &start, &today, false, nil)
+	result2 := BackfillProvider(ctx, pgpool, "TEST", adapter, &start, &today, false, 0, nil)
 	if result2.Status != "up_to_date" {
 		t.Errorf("2nd run status = %q, want up_to_date", result2.Status)
 	}
