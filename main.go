@@ -16,7 +16,15 @@ import (
 
 const setupTimeout = 2 * time.Minute
 
+// version is injected at build time via -ldflags="-X main.version=...".
+// Defaults to "dev" for unstamped local builds.
+var version = "dev"
+
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "-version" || os.Args[1] == "--version") {
+		fmt.Println(version)
+		return
+	}
 	os.Exit(run())
 }
 
@@ -45,6 +53,7 @@ func run() int {
 	baseCtx, baseCancel := context.WithCancel(context.Background())
 	defer baseCancel()
 
+	slog.Info("starting fx-rates", "version", version, "sync_mode", cfg.SyncMode)
 	slog.Info("timeouts configured", "setup", setupTimeout.String(), "sync", syncTimeout.String())
 
 	exitCode := 0
