@@ -29,7 +29,7 @@ func main() {
 }
 
 func run() int {
-	cfg, err := config.Load()
+	cfg, err := config.Bootstrap("")
 	if err != nil {
 		slog.Error("config load failed", "error", err)
 		return 1

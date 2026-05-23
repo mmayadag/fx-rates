@@ -41,9 +41,6 @@ func main() {
 	flag.StringVar(&cfg.envFile, "env-file", ".env", "path to env file")
 	flag.Parse()
 
-	if err := config.LoadDotEnv(cfg.envFile); err != nil {
-		exitErr(err)
-	}
 	if cfg.limit <= 0 {
 		exitErr(fmt.Errorf("limit must be greater than zero"))
 	}
@@ -53,7 +50,7 @@ func main() {
 	}
 	cfg.provider = providerFilter
 
-	appCfg, err := config.Load()
+	appCfg, err := config.Bootstrap(cfg.envFile)
 	if err != nil {
 		exitErr(err)
 	}

@@ -356,6 +356,66 @@ func TestLoadDotEnvMissingFileIsIgnored(t *testing.T) {
 	}
 }
 
+func TestBootstrapLocalOverridesBase(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, ".env")
+	if err := os.WriteFile(base, []byte("DB_USER=base_user\nDB_PASSWORD=base_pw\nDB_NAME=fx\nDB_HOST=localhost\nDB_PORT=5432\nDB_SSLMODE=disable\n"), 0o600); err != nil {
+		t.Fatalf("write base: %v", err)
+	}
+	local := base + ".local"
+	if err := os.WriteFile(local, []byte("DB_USER=local_user\n"), 0o600); err != nil {
+		t.Fatalf("write local: %v", err)
+	}
+
+	for _, k := range []string{"DATABASE_URL", "DB_USER", "DB_PASSWORD", "DB_NAME", "DB_HOST", "DB_PORT", "DB_SSLMODE"} {
+		unsetEnvForTest(t, k)
+	}
+
+	cfg, err := Bootstrap(base)
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if cfg.DBUser != "local_user" {
+		t.Fatalf("DBUser = %q, want local_user (override from .env.local)", cfg.DBUser)
+	}
+	if cfg.DBPassword != "base_pw" {
+		t.Fatalf("DBPassword = %q, want base_pw (from .env, no override)", cfg.DBPassword)
+	}
+}
+
+func TestBootstrapProcessEnvWinsOverDotenv(t *testing.T) {
+	dir := t.TempDir()
+	base := filepath.Join(dir, ".env")
+	if err := os.WriteFile(base, []byte("DB_USER=from_file\nDB_PASSWORD=pw\nDB_NAME=fx\nDB_HOST=localhost\nDB_PORT=5432\nDB_SSLMODE=disable\n"), 0o600); err != nil {
+		t.Fatalf("write base: %v", err)
+	}
+
+	t.Setenv("DB_USER", "from_process")
+	t.Setenv("DATABASE_URL", "")
+
+	cfg, err := Bootstrap(base)
+	if err != nil {
+		t.Fatalf("Bootstrap: %v", err)
+	}
+	if cfg.DBUser != "from_process" {
+		t.Fatalf("DBUser = %q, want from_process (process env should win)", cfg.DBUser)
+	}
+}
+
+func TestBootstrapEmptyEnvFileUsesDefault(t *testing.T) {
+	// Running in a temp dir means neither .env nor .env.local exist; Bootstrap
+	// should still succeed when process env supplies the required values.
+	dir := t.TempDir()
+	t.Chdir(dir)
+
+	t.Setenv("DATABASE_URL", "postgres://u:p@localhost/db?sslmode=disable")
+	t.Setenv("DEBUG", "false")
+
+	if _, err := Bootstrap(""); err != nil {
+		t.Fatalf("Bootstrap with no dotenv files should not error: %v", err)
+	}
+}
+
 func unsetEnvForTest(t *testing.T, key string) {
 	t.Helper()
 
