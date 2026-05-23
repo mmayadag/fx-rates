@@ -1,110 +1,123 @@
 # FX Rates
 
-`fx-rates` is a one-shot Go job that syncs European Central Bank reference rates into PostgreSQL.
+One-shot Go job that syncs European Central Bank reference rates into PostgreSQL. Designed to run from an external scheduler (k8s `CronJob`, ECS task, cron) — the binary runs to completion and exits.
 
-On each run it:
+## Quick start
 
-- applies database migrations
-- seeds the `providers` table with ECB metadata and preserves external `CURAPI` metadata
-- backfills ECB rates into `rates`
-- updates `currencies` and `currency_coverages`
-- exits when the sync finishes
+```bash
+cp .env.template .env       # edit DB_* values
+make local-db-up            # start a local Postgres in Docker
+make local-run              # full backfill against the local DB
+```
 
-The database schema stays unchanged. The `providers` table still exists, and `rates.provider` remains part of the primary key, but this runtime writes ECB rows only.
+For a quick daily refresh instead of a full backfill, set `SYNC_MODE=daily_sync` in `.env` (or use `make local-run-daily`).
+
+## How it works
+
+Each invocation:
+
+1. Applies pending database migrations (skippable via `RUN_MIGRATIONS=false`).
+2. Seeds the `providers` table with ECB metadata; preserves external `CURAPI` rows; removes any stale provider keys (logged at WARN).
+3. Backfills missing ECB rates into `rates`, resuming from `MAX(date)` per provider.
+4. Updates `currencies` and `currency_coverages` for any newly observed ISO codes.
+5. Records the run in `sync_runs` and emits a structured `metric` log event.
+6. Exits with `0` on success, `1` on failure, `130` on signal-initiated shutdown.
+
+Inserts use `ON CONFLICT DO NOTHING`, so re-running over already-stored dates is safe — there is no duplicate risk.
+
+## Sync modes
+
+| `SYNC_MODE` | Use case | Default timeout | Lookback cap |
+|---|---|---|---|
+| `full` | Initial seeding or recovery — walks the whole history from `providers.coverage_start`. | 6h | none |
+| `daily_sync` | Recurring ECB refresh (production cron). | 30m | `DAILY_SYNC_LOOKBACK_DAYS` (default 7) |
+
+In `daily_sync`, if `last_synced` is older than the lookback cap, the run still only fetches the last N days. This keeps recurring jobs bounded after an outage.
 
 ## Configuration
 
-For production daily sync, these variables are sufficient:
+Copy [`.env.template`](./.env.template) to `.env`. Every variable below is documented inline in the template too.
 
-```env
-DB_USER=...
-DB_PASSWORD=...
-DB_NAME=...
-DB_HOST=...
-DB_PORT=...
-DB_SSLMODE=...
+### Required (database connection)
 
-DB_MAX_CONNECTIONS=10
-BACKFILL_CONCURRENCY=10
-DEBUG=true
-SYNC_MODE=daily_sync
-DAILY_SYNC_TIMEOUT=30m
-DEBUG_HEARTBEAT_INTERVAL=20s
-```
+| Variable | Notes |
+|---|---|
+| `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST`, `DB_PORT` | Standard Postgres connection. |
+| `DB_SSLMODE` | Use `require` in production. `disable` is fine for local Docker. |
+| `DATABASE_URL` (alt.) | Single DSN alternative. Takes precedence over the split `DB_*` vars when set. |
 
-Copy [`.env.template`](./.env.template) to `.env` and edit the values. Mode-specific options (`SYNC_MODE`, `DAILY_SYNC_TIMEOUT`, etc.) are documented inline in the template.
+### Sync behaviour
 
-`DB_SSLMODE` should typically be `require` in production. `DATABASE_URL` is still accepted as a backward-compatible alternative, but the split `DB_*` variables are the primary configuration path. No provider credentials are needed in ECB-only mode. `currencyapi.com` credentials are also not used here because `CURAPI` rows are written by another API, not by this service.
+| Variable | Default | Notes |
+|---|---|---|
+| `SYNC_MODE` | `daily_sync` | `full` or `daily_sync` |
+| `DAILY_SYNC_TIMEOUT` | mode-dependent | Override only when needed. |
+| `DAILY_SYNC_LOOKBACK_DAYS` | `7` | Cap on how far back a `daily_sync` run reaches. `0` disables. |
+| `RUN_MIGRATIONS` | `true` | Set `false` in production when migrations are run out-of-band. |
+| `BACKFILL_CONCURRENCY` | `10` | Reserved; the current code runs a single provider. |
 
-`SYNC_MODE=full` is for intentional historical backfills. `SYNC_MODE=daily_sync` is for recurring ECB refresh runs. If `DAILY_SYNC_TIMEOUT` is unset, the default is `6h` for `full` and `30m` for `daily_sync`.
+### Connection pool
 
-## Local Run
+| Variable | Default |
+|---|---|
+| `DB_MAX_CONNECTIONS` | `10` |
+| `DB_MIN_CONNECTIONS` | `5` |
+| `DB_MAX_CONN_LIFETIME` | `30m` |
+| `DB_MAX_CONN_IDLE_TIME` | `5m` |
+| `DB_HEALTH_CHECK_PERIOD` | `30s` |
 
-Typical local flow:
+### Logging
 
-```bash
-cp .env.template .env
-# edit .env: set SYNC_MODE=daily_sync for a quick local refresh
-make local-db-up
-make local-run
-```
+| Variable | Default | Notes |
+|---|---|---|
+| `LOG_LEVEL` | derived from `DEBUG` | `debug`, `info`, `warn`, `error` |
+| `DEBUG` | `true` | When `LOG_LEVEL` is unset: `true` → debug, `false` → info. Also gates scheduler heartbeats. |
+| `DEBUG_HEARTBEAT_INTERVAL` | `20s` | Interval for heartbeat logs when `DEBUG=true`. |
 
-Useful commands:
+## Make targets
 
-```bash
-make test
-make coverage
-make run
-make run-daily
-make validate-fx
-make local-db-up
-make local-db-down
-make local-run
-make local-run-daily
-make local-smoke
-make local-smoke-daily
-```
-
-`make run`, `make run-daily`, `make local-run`, `make local-run-daily`, `make local-smoke`, and `make local-smoke-daily` load values from `.env`.
-
-## Runtime Behavior
-
-The job resumes from the last synced ECB date already stored in `rates`. If no ECB rows exist yet, it starts from `providers.coverage_start`. Re-running does not duplicate rows because inserts use `ON CONFLICT DO NOTHING`.
-
-Startup seeding keeps `providers` aligned to the supported metadata set:
-
-- `ECB` is the only provider this service syncs, backfills, and validates
-- `CURAPI` metadata may also exist in `providers` for rows written by another API
-- other stale provider rows are removed during seed
-
-Expected startup logs include:
-
-- `providers seeded` with `providers=["ECB","CURAPI"]` when `CURAPI` already exists
-- `backfill: providers queued` with `total=1`
+| Target | What it does |
+|---|---|
+| `make build` | Build all packages with version stamping. |
+| `make release-build VERSION=v0.1.0` | Build a stripped static linux binary into `dist/`. |
+| `make test` | Run unit tests (no DB required). |
+| `make test-integration` | Start local Postgres and run all tests including integration. |
+| `make coverage` | Show per-package coverage. |
+| `make sqlc-generate` | Regenerate typed query code from `internal/db/queries.sql`. |
+| `make run` / `make run-daily` | Load `.env` and run the sync job (full / daily_sync). |
+| `make local-db-up` / `make local-db-down` | Start / stop the local Docker Postgres. |
+| `make local-run` / `make local-run-daily` | Run the sync against the local DB. |
+| `make local-smoke` / `make local-smoke-daily` | `local-db-up` + run, in one command. |
+| `make validate-fx ARGS='...'` | Run the FX validation CLI (see below). |
 
 ## Validation CLI
 
-The repository includes an ECB-only validation CLI that reads DB rows from `rates` and compares them against online ECB reference data.
-
-Examples:
+`cmd/fx-validate` reads rows from `rates` and compares them against ECB reference data.
 
 ```bash
-make validate-fx ARGS='-date-from 2024-10-01 -date-to 2024-10-11 -provider ECB -output validation.csv'
-env GOCACHE=$(pwd)/.gocache go run ./cmd/fx-validate -date-from 2024-10-01 -date-to 2024-10-11 -provider ECB
+make validate-fx ARGS='-date-from 2024-10-01 -date-to 2024-10-11 -output validation.csv'
 ```
 
-`-provider` is retained for compatibility, but only `ECB` is accepted. `CURAPI` is metadata-only in this repo and is not used by daily sync, full backfill, or validation.
+Output is a CSV with one row per checked observation, including absolute and relative diffs against the upstream value. Only `-provider ECB` is supported.
 
 ## Scheduling
 
-This repository does not include an internal scheduler. Run the container from your scheduler of choice.
+There is no internal scheduler — drive the binary from your scheduler of choice (k8s `CronJob`, ECS scheduled task, ordinary cron). A typical production schedule is `daily_sync` at **16:45 CET on weekdays**, a few minutes after the ECB's daily publication window.
 
-For recurring production runs, schedule `SYNC_MODE=daily_sync` shortly after the ECB publication window. A common pattern is every working day around `16:45 CET`, with a small buffer after the ECB's usual `around 16:00 CET` publication time.
+The `fx_rates_run` and `fx_rates_provider_run` log events (see [`docs/metrics.md`](./docs/metrics.md)) can drive alerting via Loki/Datadog/Vector.
 
-## Reference Docs
+## Versioning
 
-- [docs/database-schema.md](./docs/database-schema.md)
-- [docs/metrics.md](./docs/metrics.md)
-- [docs/providers.md](./docs/providers.md)
-- [docs/provider-credentials.md](./docs/provider-credentials.md)
-- [docs/currencies.md](./docs/currencies.md)
+```bash
+fx-rates -version           # prints the stamped build version
+```
+
+`make build` injects `git describe --tags --always --dirty`. `make release-build` requires an explicit semver tag (e.g. `VERSION=v0.1.0`) and produces a reproducible static binary.
+
+## Documentation
+
+- [`docs/database-schema.md`](./docs/database-schema.md) — table layouts, idempotency contract, useful audit queries
+- [`docs/metrics.md`](./docs/metrics.md) — structured log event contract for dashboards and alerts
+- [`docs/providers.md`](./docs/providers.md) — provider catalogue
+- [`docs/provider-credentials.md`](./docs/provider-credentials.md) — credential expectations per provider
+- [`docs/currencies.md`](./docs/currencies.md) — supported ISO code list
