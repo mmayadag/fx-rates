@@ -141,7 +141,6 @@ func normalizeProviderFilter(value string) (string, error) {
 
 func writeCSV(out io.Writer, results []validator.Result) error {
 	w := csv.NewWriter(out)
-	defer w.Flush()
 
 	if err := w.Write([]string{
 		"date",
@@ -174,6 +173,7 @@ func writeCSV(out io.Writer, results []validator.Result) error {
 		}
 	}
 
+	w.Flush()
 	return w.Error()
 }
 
