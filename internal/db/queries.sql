@@ -69,3 +69,18 @@ WHERE (sqlc.arg(date_from)::text = '' OR date >= sqlc.arg(date_from)::date)
   AND provider = sqlc.arg(provider_key)
 ORDER BY date, provider, base, quote
 LIMIT sqlc.arg(row_limit);
+
+-- name: RecordSyncRun :exec
+INSERT INTO sync_runs (
+    provider, mode, status, started_at, finished_at,
+    rows_fetched, rows_inserted, rows_skipped, error_message
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+
+-- name: GetLatestSyncRun :one
+SELECT id, provider, mode, status, started_at, finished_at,
+       rows_fetched, rows_inserted, rows_skipped, error_message
+FROM sync_runs
+WHERE provider = $1
+ORDER BY finished_at DESC
+LIMIT 1;
