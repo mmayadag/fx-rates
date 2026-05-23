@@ -96,3 +96,99 @@ func TestSeedPreservesCURAPIAndRemovesStaleProviders(t *testing.T) {
 		t.Fatalf("expected ECB row second, got %#v", got[1])
 	}
 }
+
+func TestSeedSeedsECBFromEmbeddedDataOnEmptyDB(t *testing.T) {
+	dsn := testDBPool(t)
+
+	pool, err := NewPool(context.Background(), dsn, PoolOptions{MaxConns: 5})
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `DELETE FROM providers`); err != nil {
+		t.Fatalf("clear providers: %v", err)
+	}
+
+	if err := Seed(ctx, pool); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	var count int
+	if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM providers WHERE key = 'ECB'`).Scan(&count); err != nil {
+		t.Fatalf("count ecb: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly 1 ECB row after seed, got %d", count)
+	}
+}
+
+func TestSeedIsIdempotent(t *testing.T) {
+	dsn := testDBPool(t)
+
+	pool, err := NewPool(context.Background(), dsn, PoolOptions{MaxConns: 5})
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `DELETE FROM providers`); err != nil {
+		t.Fatalf("clear providers: %v", err)
+	}
+
+	if err := Seed(ctx, pool); err != nil {
+		t.Fatalf("first seed: %v", err)
+	}
+	var firstCount int
+	pool.QueryRow(ctx, `SELECT COUNT(*) FROM providers`).Scan(&firstCount)
+
+	if err := Seed(ctx, pool); err != nil {
+		t.Fatalf("second seed: %v", err)
+	}
+	var secondCount int
+	pool.QueryRow(ctx, `SELECT COUNT(*) FROM providers`).Scan(&secondCount)
+
+	if firstCount != secondCount {
+		t.Fatalf("provider count drifted across seed runs: %d → %d", firstCount, secondCount)
+	}
+}
+
+func TestSeedRefreshesECBMetadata(t *testing.T) {
+	dsn := testDBPool(t)
+
+	pool, err := NewPool(context.Background(), dsn, PoolOptions{MaxConns: 5})
+	if err != nil {
+		t.Fatalf("pool: %v", err)
+	}
+	defer pool.Close()
+
+	ctx := context.Background()
+	if _, err := pool.Exec(ctx, `DELETE FROM providers`); err != nil {
+		t.Fatalf("clear providers: %v", err)
+	}
+
+	// Pre-insert ECB with a stale name; seed should overwrite it from the
+	// embedded JSON via ON CONFLICT DO UPDATE.
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO providers (key, name) VALUES ('ECB', 'Stale Name')
+	`); err != nil {
+		t.Fatalf("insert stale ECB: %v", err)
+	}
+
+	if err := Seed(ctx, pool); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	var name string
+	if err := pool.QueryRow(ctx, `SELECT name FROM providers WHERE key = 'ECB'`).Scan(&name); err != nil {
+		t.Fatalf("query name: %v", err)
+	}
+	if name == "Stale Name" {
+		t.Fatalf("expected seed to refresh ECB name; got %q", name)
+	}
+	if name == "" {
+		t.Fatal("expected non-empty ECB name after seed")
+	}
+}
