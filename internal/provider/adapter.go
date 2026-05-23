@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"syscall"
@@ -176,7 +177,7 @@ func FetchEachObserved(ctx context.Context, a Adapter, after time.Time, observe 
 				LastError:  err.Error(),
 			})
 			select {
-			case <-time.After(time.Duration(1<<retries) * time.Second):
+			case <-time.After(retryBackoff(retries)):
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -211,7 +212,21 @@ func emitFetchEvent(observe FetchObserver, event FetchEvent) {
 	}
 }
 
+// retryBackoff returns the exponential backoff delay for the given retry count
+// with ±10% jitter to prevent multi-instance thundering herd against upstream
+// providers after a coordinated failure.
+func retryBackoff(retry int) time.Duration {
+	base := time.Duration(1<<retry) * time.Second
+	jitter := time.Duration(rand.Int63n(int64(base/5))) - base/10 // ±10%
+	return base + jitter
+}
+
 // DefaultClient is the shared HTTP client for all adapters.
+// Redirects are rejected so a DNS spoof or MITM cannot silently redirect
+// upstream requests to an attacker-controlled host.
 var DefaultClient = &http.Client{
 	Timeout: 60 * time.Second,
+	CheckRedirect: func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	},
 }
