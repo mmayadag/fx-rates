@@ -105,11 +105,16 @@ func run() int {
 	defer syncCancel()
 
 	slog.Info("sync job started")
+	lookback := 0
+	if cfg.IsDailySync() {
+		lookback = cfg.DailySyncLookback
+	}
 	if err := scheduler.BackfillAll(syncCtx, pool, scheduler.Options{
 		Concurrency:       cfg.BackfillConcurrency,
 		Debug:             cfg.Debug,
 		HeartbeatInterval: heartbeatInterval,
 		DailySync:         cfg.IsDailySync(),
+		DailySyncLookback: lookback,
 	}); err != nil {
 		slog.Error("sync job failed", "error", err)
 		if exitCode == 0 {

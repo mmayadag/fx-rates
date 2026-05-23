@@ -13,16 +13,56 @@ import (
 	"github.com/mmayadag/fx-rates/internal/provider"
 )
 
-func TestAdjustStartForMode(t *testing.T) {
+func TestAdjustStartForMode_DailyWithinLookbackUnchanged(t *testing.T) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
-	start := today.AddDate(0, 0, -5)
+	start := today.AddDate(0, 0, -3)
 
-	got, note := adjustStartForMode("ECB", start, today, true)
+	got, note := adjustStartForMode("ECB", start, today, true, 7)
 	if !got.Equal(start) {
-		t.Fatalf("got %v, want %v", got, start)
+		t.Fatalf("got %v, want %v (start within 7-day floor)", got, start)
 	}
 	if note != "" {
-		t.Fatalf("expected empty note, got %q", note)
+		t.Fatalf("expected empty note when uncapped, got %q", note)
+	}
+}
+
+func TestAdjustStartForMode_DailyCapsWhenBeyondLookback(t *testing.T) {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	start := today.AddDate(0, 0, -30)
+	floor := today.AddDate(0, 0, -7)
+
+	got, note := adjustStartForMode("ECB", start, today, true, 7)
+	if !got.Equal(floor) {
+		t.Fatalf("got %v, want floor %v", got, floor)
+	}
+	if note == "" {
+		t.Fatal("expected non-empty note when capping")
+	}
+}
+
+func TestAdjustStartForMode_DailyZeroStartUsesFloor(t *testing.T) {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	floor := today.AddDate(0, 0, -7)
+
+	got, note := adjustStartForMode("ECB", time.Time{}, today, true, 7)
+	if !got.Equal(floor) {
+		t.Fatalf("got %v, want floor %v", got, floor)
+	}
+	if note == "" {
+		t.Fatal("expected non-empty note when starting from floor")
+	}
+}
+
+func TestAdjustStartForMode_DailyLookbackZeroDisablesCap(t *testing.T) {
+	today := time.Now().UTC().Truncate(24 * time.Hour)
+	start := today.AddDate(0, 0, -365)
+
+	got, note := adjustStartForMode("ECB", start, today, true, 0)
+	if !got.Equal(start) {
+		t.Fatalf("got %v, want %v (lookback=0 should disable cap)", got, start)
+	}
+	if note != "" {
+		t.Fatalf("expected empty note when cap disabled, got %q", note)
 	}
 }
 
@@ -264,12 +304,12 @@ func TestFormatRunningProvider_NoUpto(t *testing.T) {
 func TestAdjustStartForMode_NotDailySync(t *testing.T) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	start := today.AddDate(0, 0, -30)
-	got, note := adjustStartForMode("ECB", start, today, false)
+	got, note := adjustStartForMode("ECB", start, today, false, 7)
 	if !got.Equal(start) {
-		t.Fatalf("got %v, want %v", got, start)
+		t.Fatalf("full mode should not cap; got %v, want %v", got, start)
 	}
 	if note != "" {
-		t.Fatalf("expected empty note, got %q", note)
+		t.Fatalf("expected empty note in full mode, got %q", note)
 	}
 }
 

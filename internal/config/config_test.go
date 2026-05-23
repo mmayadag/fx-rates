@@ -273,6 +273,7 @@ func TestLoadAppliesRuntimeDefaults(t *testing.T) {
 	unsetEnvForTest(t, "SYNC_MODE")
 	unsetEnvForTest(t, "DAILY_SYNC_TIMEOUT")
 	unsetEnvForTest(t, "DEBUG_HEARTBEAT_INTERVAL")
+	unsetEnvForTest(t, "DAILY_SYNC_LOOKBACK_DAYS")
 
 	cfg, err := Load()
 	if err != nil {
@@ -292,6 +293,9 @@ func TestLoadAppliesRuntimeDefaults(t *testing.T) {
 	}
 	if cfg.DBHealthCheckPeriod != 30*time.Second {
 		t.Fatalf("DBHealthCheckPeriod = %v, want 30s", cfg.DBHealthCheckPeriod)
+	}
+	if cfg.DailySyncLookback != 7 {
+		t.Fatalf("DailySyncLookback = %d, want 7", cfg.DailySyncLookback)
 	}
 	if cfg.BackfillConcurrency != 10 {
 		t.Fatalf("BackfillConcurrency = %d, want 10", cfg.BackfillConcurrency)
