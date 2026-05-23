@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/mmayadag/fx-rates/internal/db/sqlcgen"
 )
 
 type Provider struct {
@@ -22,65 +24,57 @@ type Provider struct {
 
 // LoadAll returns all providers from the database.
 func LoadAll(ctx context.Context, pool *pgxpool.Pool) ([]Provider, error) {
-	rows, err := pool.Query(ctx, `
-		SELECT key, name, country_code, rate_type, pivot_currency,
-		       data_url, terms_url, publish_time, publish_days, coverage_start
-		FROM providers
-		ORDER BY key
-	`)
+	rows, err := sqlcgen.New(pool).ListProviders(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	var providers []Provider
-	for rows.Next() {
-		var p Provider
-		if err := rows.Scan(
-			&p.Key, &p.Name, &p.CountryCode, &p.RateType, &p.PivotCurrency,
-			&p.DataURL, &p.TermsURL, &p.PublishTime, &p.PublishDays, &p.CoverageStart,
-		); err != nil {
-			return nil, err
-		}
-		providers = append(providers, p)
+	providers := make([]Provider, 0, len(rows))
+	for _, r := range rows {
+		providers = append(providers, Provider{
+			Key:           r.Key,
+			Name:          r.Name,
+			CountryCode:   r.CountryCode,
+			RateType:      r.RateType,
+			PivotCurrency: r.PivotCurrency,
+			DataURL:       r.DataUrl,
+			TermsURL:      r.TermsUrl,
+			PublishTime:   int32PtrToIntPtr(r.PublishTime),
+			PublishDays:   r.PublishDays,
+			CoverageStart: sqlcgen.DateToTimePtr(r.CoverageStart),
+		})
 	}
-	return providers, rows.Err()
+	return providers, nil
 }
 
 // GetLastSynced returns the most recent date for which rates exist for this provider.
 // Returns nil if no rates have been imported yet.
 func GetLastSynced(ctx context.Context, pool *pgxpool.Pool, providerKey string) (*time.Time, error) {
-	var maxDate *time.Time
-	err := pool.QueryRow(ctx,
-		`SELECT MAX(date) FROM rates WHERE provider = $1`,
-		providerKey,
-	).Scan(&maxDate)
+	d, err := sqlcgen.New(pool).GetLastSyncedForProvider(ctx, providerKey)
 	if err != nil {
 		return nil, err
 	}
-	return maxDate, nil
+	return sqlcgen.DateToTimePtr(d), nil
 }
 
 // GetAllLastSynced returns the most recent synced date for every provider in a
 // single query instead of one query per provider. Providers with no rates are
 // omitted from the returned map.
 func GetAllLastSynced(ctx context.Context, pool *pgxpool.Pool) (map[string]*time.Time, error) {
-	rows, err := pool.Query(ctx,
-		`SELECT provider, MAX(date) FROM rates GROUP BY provider`,
-	)
+	rows, err := sqlcgen.New(pool).GetAllLastSynced(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-
-	result := make(map[string]*time.Time)
-	for rows.Next() {
-		var key string
-		var maxDate *time.Time
-		if err := rows.Scan(&key, &maxDate); err != nil {
-			return nil, err
-		}
-		result[key] = maxDate
+	result := make(map[string]*time.Time, len(rows))
+	for _, r := range rows {
+		result[r.Provider] = sqlcgen.DateToTimePtr(r.LastSynced)
 	}
-	return result, rows.Err()
+	return result, nil
+}
+
+func int32PtrToIntPtr(v *int32) *int {
+	if v == nil {
+		return nil
+	}
+	i := int(*v)
+	return &i
 }
