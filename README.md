@@ -38,6 +38,8 @@ In `daily_sync`, if `last_synced` is older than the lookback cap, the run still 
 
 Copy [`.env.template`](./.env.template) to `.env`. Every variable below is documented inline in the template too.
 
+Loading order: process environment wins, then `.env.local` (developer overrides, gitignored), then `.env` (team baseline).
+
 ### Required (database connection)
 
 | Variable | Notes |
