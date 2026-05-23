@@ -224,3 +224,17 @@ type mockNetError struct{ timeout bool }
 func (e *mockNetError) Error() string   { return "mock net error" }
 func (e *mockNetError) Timeout() bool   { return e.timeout }
 func (e *mockNetError) Temporary() bool { return false }
+
+func TestRetryBackoffStaysWithinJitterEnvelope(t *testing.T) {
+	for retry := 0; retry < 6; retry++ {
+		base := time.Duration(1<<retry) * time.Second
+		minD := base - base/10
+		maxD := base + base/10
+		for i := 0; i < 20; i++ {
+			got := retryBackoff(retry)
+			if got < minD || got > maxD {
+				t.Errorf("retry=%d got %v, expected within [%v, %v]", retry, got, minD, maxD)
+			}
+		}
+	}
+}
