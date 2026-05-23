@@ -5,11 +5,12 @@ ENV_FILE ?= .env
 BACKFILL_CONCURRENCY ?= 10
 ENV_LOADER = set -a; if [ -f "$(ENV_FILE)" ]; then . "$(ENV_FILE)"; fi; set +a;
 
-.PHONY: help build test coverage test-integration run run-daily validate-fx daily-sync-example local-run local-run-daily local-db-up local-db-down local-db-logs local-db-ps local-smoke local-smoke-daily
+.PHONY: help build sqlc-generate test coverage test-integration run run-daily validate-fx daily-sync-example local-run local-run-daily local-db-up local-db-down local-db-logs local-db-ps local-smoke local-smoke-daily
 
 help:
 	@printf '%s\n' \
 		'make build             - Build all Go packages' \
+		'make sqlc-generate     - Regenerate typed query code from internal/db/queries.sql' \
 		'make test              - Run unit tests' \
 		'make coverage          - Show test coverage per package' \
 		'make test-integration  - Start local Postgres and run all tests (including DB integration tests)' \
@@ -28,6 +29,10 @@ help:
 
 build:
 	$(GO) build ./...
+
+sqlc-generate:
+	@command -v sqlc >/dev/null || { echo "sqlc not found. Install: go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest"; exit 1; }
+	sqlc generate
 
 test:
 	$(GO) test ./...

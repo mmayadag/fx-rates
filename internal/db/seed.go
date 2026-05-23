@@ -7,9 +7,12 @@ import (
 	"log/slog"
 	"path"
 	"slices"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/mmayadag/fx-rates/internal/db/sqlcgen"
 	"github.com/mmayadag/fx-rates/internal/seed"
 )
 
@@ -36,27 +39,16 @@ func Seed(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 func seedProviders(ctx context.Context, pool *pgxpool.Pool) error {
+	q := sqlcgen.New(pool)
+
 	entries, err := seed.FS.ReadDir("data/providers")
 	if err != nil {
 		return fmt.Errorf("read seed dir: %w", err)
 	}
 
-	rows, err := pool.Query(ctx, `DELETE FROM providers WHERE key NOT IN ('ECB', 'CURAPI') RETURNING key`)
+	staleKeys, err := q.DeleteStaleProviders(ctx)
 	if err != nil {
 		return fmt.Errorf("delete stale providers: %w", err)
-	}
-	var staleKeys []string
-	for rows.Next() {
-		var k string
-		if err := rows.Scan(&k); err != nil {
-			rows.Close()
-			return fmt.Errorf("scan stale provider key: %w", err)
-		}
-		staleKeys = append(staleKeys, k)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("iterate stale providers: %w", err)
 	}
 	if len(staleKeys) > 0 {
 		slices.Sort(staleKeys)
@@ -77,55 +69,55 @@ func seedProviders(ctx context.Context, pool *pgxpool.Pool) error {
 			return fmt.Errorf("parse %s: %w", entry.Name(), err)
 		}
 
-		_, err = pool.Exec(ctx, `
-			INSERT INTO providers (key, name, country_code, rate_type, pivot_currency, data_url, terms_url, publish_time, publish_days, coverage_start)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::date)
-			ON CONFLICT (key) DO UPDATE SET
-				name           = EXCLUDED.name,
-				country_code   = EXCLUDED.country_code,
-				rate_type      = EXCLUDED.rate_type,
-				pivot_currency = EXCLUDED.pivot_currency,
-				data_url       = EXCLUDED.data_url,
-				terms_url      = EXCLUDED.terms_url,
-				publish_time   = EXCLUDED.publish_time,
-				publish_days   = EXCLUDED.publish_days,
-				coverage_start = EXCLUDED.coverage_start
-		`, p.Key, p.Name, p.CountryCode, p.RateType, p.PivotCurrency,
-			p.DataURL, p.TermsURL, p.PublishTime, p.PublishDays, p.CoverageStart)
+		coverageStart, err := parseCoverageStart(p.CoverageStart)
 		if err != nil {
+			return fmt.Errorf("parse coverage_start for %s: %w", p.Key, err)
+		}
+
+		if err := q.UpsertProvider(ctx, sqlcgen.UpsertProviderParams{
+			Key:           p.Key,
+			Name:          p.Name,
+			CountryCode:   p.CountryCode,
+			RateType:      p.RateType,
+			PivotCurrency: p.PivotCurrency,
+			DataUrl:       p.DataURL,
+			TermsUrl:      p.TermsURL,
+			PublishTime:   intPtrToInt32Ptr(p.PublishTime),
+			PublishDays:   p.PublishDays,
+			CoverageStart: coverageStart,
+		}); err != nil {
 			return fmt.Errorf("upsert provider %s: %w", p.Key, err)
 		}
 	}
 
-	keys, err := loadProviderKeys(ctx, pool)
+	keys, err := q.ListProviderKeys(ctx)
 	if err != nil {
 		return fmt.Errorf("load provider keys: %w", err)
 	}
 
-	var count int
-	pool.QueryRow(ctx, "SELECT COUNT(*) FROM providers").Scan(&count)
+	count, err := q.CountProviders(ctx)
+	if err != nil {
+		return fmt.Errorf("count providers: %w", err)
+	}
 	slog.Info("providers seeded", "count", count, "providers", keys)
 	return nil
 }
 
-func loadProviderKeys(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
-	rows, err := pool.Query(ctx, `SELECT key FROM providers`)
+func parseCoverageStart(s *string) (pgtype.Date, error) {
+	if s == nil || *s == "" {
+		return pgtype.Date{Valid: false}, nil
+	}
+	t, err := time.Parse("2006-01-02", *s)
 	if err != nil {
-		return nil, err
+		return pgtype.Date{}, err
 	}
-	defer rows.Close()
+	return sqlcgen.TimeToDate(t), nil
+}
 
-	var keys []string
-	for rows.Next() {
-		var key string
-		if err := rows.Scan(&key); err != nil {
-			return nil, err
-		}
-		keys = append(keys, key)
+func intPtrToInt32Ptr(v *int) *int32 {
+	if v == nil {
+		return nil
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	slices.Sort(keys)
-	return keys, nil
+	i := int32(*v)
+	return &i
 }

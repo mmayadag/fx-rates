@@ -12,6 +12,7 @@ import (
 
 	"github.com/mmayadag/fx-rates/internal/config"
 	"github.com/mmayadag/fx-rates/internal/db"
+	"github.com/mmayadag/fx-rates/internal/db/sqlcgen"
 	"github.com/mmayadag/fx-rates/internal/validator"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -102,43 +103,29 @@ func main() {
 }
 
 func fetchRecords(ctx context.Context, pool *pgxpool.Pool, cfg filters) ([]validator.DBRecord, error) {
-	query := `
-SELECT date, base, quote, rate, provider
-FROM rates
-WHERE ($1 = '' OR date >= $1::date)
-  AND ($2 = '' OR date <= $2::date)
-  AND ($3 = '' OR base = $3)
-  AND ($4 = '' OR quote = $4)
-  AND provider = $5
-ORDER BY date, provider, base, quote
-LIMIT $6`
-
-	rows, err := pool.Query(ctx, query,
-		cfg.dateFrom,
-		cfg.dateTo,
-		strings.ToUpper(strings.TrimSpace(cfg.base)),
-		strings.ToUpper(strings.TrimSpace(cfg.quote)),
-		cfg.provider,
-		cfg.limit,
-	)
+	rows, err := sqlcgen.New(pool).FetchRatesForValidation(ctx, sqlcgen.FetchRatesForValidationParams{
+		DateFrom:    cfg.dateFrom,
+		DateTo:      cfg.dateTo,
+		BaseCode:    strings.ToUpper(strings.TrimSpace(cfg.base)),
+		QuoteCode:   strings.ToUpper(strings.TrimSpace(cfg.quote)),
+		ProviderKey: cfg.provider,
+		RowLimit:    int32(cfg.limit),
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
-	records := make([]validator.DBRecord, 0)
-	for rows.Next() {
-		var rec validator.DBRecord
-		if err := rows.Scan(&rec.Date, &rec.Base, &rec.Quote, &rec.Rate, &rec.Provider); err != nil {
-			return nil, err
-		}
-		rec.Base = strings.ToUpper(rec.Base)
-		rec.Quote = strings.ToUpper(rec.Quote)
-		rec.Provider = strings.ToUpper(rec.Provider)
-		records = append(records, rec)
+	records := make([]validator.DBRecord, 0, len(rows))
+	for _, r := range rows {
+		records = append(records, validator.DBRecord{
+			Date:     r.Date.Time,
+			Base:     strings.ToUpper(r.Base),
+			Quote:    strings.ToUpper(r.Quote),
+			Rate:     r.Rate,
+			Provider: strings.ToUpper(r.Provider),
+		})
 	}
-
-	return records, rows.Err()
+	return records, nil
 }
 
 func normalizeProviderFilter(value string) (string, error) {
