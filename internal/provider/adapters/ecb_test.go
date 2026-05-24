@@ -117,3 +117,30 @@ func TestECBParseRowEdgeCases(t *testing.T) {
 		}
 	})
 }
+
+func TestECBBufferCap(t *testing.T) {
+	t.Run("default when env unset", func(t *testing.T) {
+		t.Setenv("ECB_MAX_RESPONSE_BYTES", "")
+		if got := ecbBufferCap(); got != defaultECBMaxBufferSize {
+			t.Fatalf("ecbBufferCap() = %d, want %d", got, defaultECBMaxBufferSize)
+		}
+	})
+	t.Run("env override", func(t *testing.T) {
+		t.Setenv("ECB_MAX_RESPONSE_BYTES", "2048")
+		if got := ecbBufferCap(); got != 2048 {
+			t.Fatalf("ecbBufferCap() = %d, want 2048", got)
+		}
+	})
+	t.Run("invalid env falls back to default", func(t *testing.T) {
+		t.Setenv("ECB_MAX_RESPONSE_BYTES", "abc")
+		if got := ecbBufferCap(); got != defaultECBMaxBufferSize {
+			t.Fatalf("ecbBufferCap() = %d, want %d", got, defaultECBMaxBufferSize)
+		}
+	})
+	t.Run("zero or negative env falls back to default", func(t *testing.T) {
+		t.Setenv("ECB_MAX_RESPONSE_BYTES", "0")
+		if got := ecbBufferCap(); got != defaultECBMaxBufferSize {
+			t.Fatalf("ecbBufferCap() = %d, want %d", got, defaultECBMaxBufferSize)
+		}
+	})
+}
