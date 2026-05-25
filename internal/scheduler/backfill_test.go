@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"log/slog"
 	"strings"
 	"sync"
@@ -298,6 +299,151 @@ func TestFormatRunningProvider_NoUpto(t *testing.T) {
 	got := formatRunningProvider("ECB", state, now)
 	if !strings.Contains(got, "..today") {
 		t.Fatalf("expected '..today' in output, got: %q", got)
+	}
+}
+
+func TestIsUpToDate(t *testing.T) {
+	today := time.Date(2026, 5, 24, 0, 0, 0, 0, time.UTC)
+	yesterday := today.AddDate(0, 0, -1)
+	tomorrow := today.AddDate(0, 0, 1)
+
+	tests := []struct {
+		name  string
+		after *time.Time
+		want  bool
+	}{
+		{"nil after → false", nil, false},
+		{"after = today → true", &today, true},
+		{"after = tomorrow → true", &tomorrow, true},
+		{"after = yesterday → false", &yesterday, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isUpToDate(tt.after, today); got != tt.want {
+				t.Fatalf("isUpToDate = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStartFrom(t *testing.T) {
+	if got := startFrom(nil); !got.IsZero() {
+		t.Fatalf("startFrom(nil) = %v, want zero", got)
+	}
+	d := time.Date(2024, 1, 2, 0, 0, 0, 0, time.UTC)
+	if got := startFrom(&d); !got.Equal(d) {
+		t.Fatalf("startFrom(&d) = %v, want %v", got, d)
+	}
+}
+
+func TestFilterValidRecords(t *testing.T) {
+	d1 := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	d2 := time.Date(2024, 6, 5, 0, 0, 0, 0, time.UTC)
+	records := []provider.Record{
+		{Date: d1, Base: "EUR", Quote: "USD", Rate: 1.1},
+		{Date: d2, Base: "EUR", Quote: "XDR", Rate: 0.8}, // excluded
+		{Date: d1, Base: "XDR", Quote: "GBP", Rate: 0.9}, // excluded
+		{Date: d2, Base: "EUR", Quote: "GBP", Rate: -1},  // invalid
+		{Date: d2, Base: "EUR", Quote: "JPY", Rate: 160}, // valid
+	}
+	valid, maxSeen := filterValidRecords(records, "ECB")
+
+	if len(valid) != 2 {
+		t.Fatalf("expected 2 valid records, got %d: %#v", len(valid), valid)
+	}
+	for _, v := range valid {
+		if v.Provider != "ECB" {
+			t.Errorf("expected Provider=ECB, got %q", v.Provider)
+		}
+	}
+	if maxSeen == nil || !maxSeen.Equal(d2) {
+		t.Fatalf("maxSeen = %v, want %v", maxSeen, d2)
+	}
+}
+
+func TestFilterValidRecords_AllInvalidReturnsNil(t *testing.T) {
+	d := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	records := []provider.Record{
+		{Date: d, Base: "EUR", Quote: "XDR", Rate: 1},
+		{Date: d, Base: "EUR", Quote: "USD", Rate: 0},
+	}
+	valid, maxSeen := filterValidRecords(records, "ECB")
+	if len(valid) != 0 {
+		t.Fatalf("expected 0 valid, got %d", len(valid))
+	}
+	if maxSeen != nil {
+		t.Fatalf("expected nil maxSeen, got %v", maxSeen)
+	}
+}
+
+func TestClassifyFetchError_Unavailable(t *testing.T) {
+	res := classifyFetchError(
+		&provider.Unavailable{Msg: "ECB returned no data"},
+		BackfillResult{Provider: "ECB"},
+		backfillProgress{fetched: 3, inserted: 2, skipped: 1},
+		"ECB",
+	)
+	if res.Status != "unavailable" {
+		t.Fatalf("Status = %q, want unavailable", res.Status)
+	}
+	if !res.Unavailable {
+		t.Fatal("expected Unavailable=true")
+	}
+	if res.Error != "ECB returned no data" {
+		t.Fatalf("Error = %q", res.Error)
+	}
+	if res.Fetched != 3 || res.Inserted != 2 || res.Skipped != 1 {
+		t.Fatalf("progress not propagated: %+v", res)
+	}
+}
+
+func TestClassifyFetchError_TransientAndPermanentBothErrorStatus(t *testing.T) {
+	transient := classifyFetchError(io.EOF, BackfillResult{Provider: "ECB"}, backfillProgress{fetched: 10}, "ECB")
+	if transient.Status != "error" {
+		t.Fatalf("transient Status = %q, want error", transient.Status)
+	}
+	if transient.Fetched != 10 {
+		t.Fatalf("Fetched = %d, want 10", transient.Fetched)
+	}
+
+	permanent := classifyFetchError(errors.New("malformed CSV"), BackfillResult{Provider: "ECB"}, backfillProgress{fetched: 5}, "ECB")
+	if permanent.Status != "error" {
+		t.Fatalf("permanent Status = %q, want error", permanent.Status)
+	}
+	if !strings.Contains(permanent.Error, "malformed CSV") {
+		t.Fatalf("Error = %q, want 'malformed CSV'", permanent.Error)
+	}
+}
+
+func TestFinalizeSuccess_Empty(t *testing.T) {
+	res := finalizeSuccess(
+		BackfillResult{Provider: "ECB"}, // LastSyncedBefore nil → matches empty branch
+		backfillProgress{},
+		time.Now(),
+		"ECB",
+	)
+	if res.Status != "empty" {
+		t.Fatalf("Status = %q, want empty", res.Status)
+	}
+}
+
+func TestFinalizeSuccess_BumpsLastSyncedAfter(t *testing.T) {
+	prev := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	newer := time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC)
+	res := finalizeSuccess(
+		BackfillResult{Provider: "ECB", LastSyncedBefore: &prev, LastSyncedAfter: &prev},
+		backfillProgress{fetched: 5, inserted: 5, maxSeenDate: &newer},
+		time.Now(),
+		"ECB",
+	)
+	if res.Status != "success" {
+		t.Fatalf("Status = %q, want success", res.Status)
+	}
+	if res.LastSyncedAfter == nil || !res.LastSyncedAfter.Equal(newer) {
+		t.Fatalf("LastSyncedAfter = %v, want %v", res.LastSyncedAfter, newer)
+	}
+	if res.Inserted != 5 {
+		t.Fatalf("Inserted = %d, want 5", res.Inserted)
 	}
 }
 

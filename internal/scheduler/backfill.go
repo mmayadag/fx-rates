@@ -380,127 +380,158 @@ func emitRunMetric(summary RunSummary, dailySync bool, duration time.Duration, s
 	)
 }
 
+// backfillProgress accumulates per-batch counters during a provider run.
+type backfillProgress struct {
+	fetched     int
+	inserted    int
+	skipped     int
+	maxSeenDate *time.Time
+}
+
+// isUpToDate reports whether the next fetch start is at or beyond today —
+// meaning there is nothing new to backfill.
+func isUpToDate(after *time.Time, today time.Time) bool {
+	return after != nil && !after.Before(today)
+}
+
+// startFrom resolves the loop start time from an optional "after" pointer.
+// nil → zero (fetch from the adapter's natural beginning).
+func startFrom(after *time.Time) time.Time {
+	if after == nil {
+		return time.Time{}
+	}
+	return *after
+}
+
+// filterValidRecords drops excluded currencies and non-finite rates, stamps the
+// provider key, and reports the latest observation date seen in the batch.
+func filterValidRecords(records []provider.Record, key string) ([]provider.Record, *time.Time) {
+	var valid []provider.Record
+	var maxSeen *time.Time
+	for _, r := range records {
+		if ExcludedQuotes[r.Quote] || ExcludedQuotes[r.Base] {
+			continue
+		}
+		if r.Rate <= 0 || math.IsNaN(r.Rate) || math.IsInf(r.Rate, 0) {
+			slog.Warn("invalid rate skipped", "provider", key, "base", r.Base, "quote", r.Quote, "rate", r.Rate)
+			continue
+		}
+		r.Provider = key
+		valid = append(valid, r)
+		maxSeen = maxTimePtr(maxSeen, &r.Date)
+	}
+	return valid, maxSeen
+}
+
+// processBatch validates a fetched batch, persists the valid rows, and refreshes
+// per-currency coverage summaries. It updates the shared progress accumulator
+// in place — keeping the caller's loop body small.
+func processBatch(ctx context.Context, pool *pgxpool.Pool, key string, records []provider.Record, progress *backfillProgress) error {
+	progress.fetched += len(records)
+	if len(records) == 0 {
+		return nil
+	}
+
+	valid, maxSeen := filterValidRecords(records, key)
+	progress.maxSeenDate = maxTimePtr(progress.maxSeenDate, maxSeen)
+	if len(valid) == 0 {
+		return nil
+	}
+
+	inserted, err := bulkUpsertRates(ctx, pool, valid)
+	if err != nil {
+		return err
+	}
+	progress.inserted += inserted
+	progress.skipped += len(valid) - inserted
+	slog.Debug("backfill: inserted rates", "provider", key, "count", inserted)
+
+	if inserted > 0 {
+		if err := domain.UpsertCurrencySummary(ctx, pool, key, uniqueCurrencies(valid)); err != nil {
+			slog.Warn("backfill: currency summary failed", "provider", key, "err", err)
+		}
+	}
+	return nil
+}
+
+// classifyFetchError maps a FetchEachObserved error to a terminal BackfillResult.
+// All three branches (unavailable / transient / non-transient) share the same
+// progress snapshot — only Status and log severity differ.
+func classifyFetchError(err error, result BackfillResult, progress backfillProgress, key string) BackfillResult {
+	result.Fetched = progress.fetched
+	result.Inserted = progress.inserted
+	result.Skipped = progress.skipped
+
+	var unavail *provider.Unavailable
+	if isUnavailable(err, &unavail) {
+		slog.Warn("backfill: provider unavailable", "provider", key, "msg", unavail.Msg)
+		result.Status = "unavailable"
+		result.Unavailable = true
+		result.Error = unavail.Msg
+		return result
+	}
+	if provider.IsTransient(err) {
+		slog.Error("backfill: transient error", "provider", key, "err", err)
+	} else {
+		slog.Error("backfill: error", "provider", key, "err", err)
+	}
+	result.Status = "error"
+	result.Error = err.Error()
+	return result
+}
+
+// finalizeSuccess wraps up a completed (or empty) run into the terminal
+// BackfillResult and logs the matching summary line.
+func finalizeSuccess(result BackfillResult, progress backfillProgress, startedAt time.Time, key string) BackfillResult {
+	if progress.maxSeenDate != nil {
+		result.LastSyncedAfter = maxTimePtr(result.LastSyncedAfter, progress.maxSeenDate)
+	}
+	result.Fetched = progress.fetched
+	result.Inserted = progress.inserted
+	result.Skipped = progress.skipped
+
+	if progress.fetched == 0 && progress.inserted == 0 && result.LastSyncedBefore == nil {
+		slog.Warn("backfill: empty result", "provider", key, "fetched", progress.fetched, "inserted", progress.inserted, "skipped", progress.skipped, "duration_ms", time.Since(startedAt).Milliseconds(), "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
+		result.Status = "empty"
+		return result
+	}
+
+	slog.Info("backfill: completed", "provider", key, "fetched", progress.fetched, "inserted", progress.inserted, "skipped", progress.skipped, "duration_ms", time.Since(startedAt).Milliseconds(), "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
+	result.Status = "success"
+	return result
+}
+
 // BackfillProvider fetches and stores all missing rates for one provider.
 func BackfillProvider(ctx context.Context, pool *pgxpool.Pool, key string, a provider.Adapter, coverageStart *time.Time, lastSynced *time.Time, dailySync bool, lookbackDays int, observe provider.FetchObserver) BackfillResult {
-	result := BackfillResult{Provider: key}
 	startedAt := time.Now()
-	result.LastSyncedBefore = cloneTimePtr(lastSynced)
-	result.LastSyncedAfter = cloneTimePtr(lastSynced)
+	result := BackfillResult{
+		Provider:         key,
+		LastSyncedBefore: cloneTimePtr(lastSynced),
+		LastSyncedAfter:  cloneTimePtr(lastSynced),
+	}
 
 	after := getStartDate(key, coverageStart, lastSynced)
 	today := time.Now().UTC().Truncate(24 * time.Hour)
-	if after != nil && !after.Before(today) {
+	if isUpToDate(after, today) {
 		slog.Info("backfill: up to date", "provider", key, "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
 		result.Status = "up_to_date"
 		return result
 	}
 
-	start := time.Time{}
-	if after != nil {
-		start = *after
-	}
-
-	start, startNote := adjustStartForMode(key, start, today, dailySync, lookbackDays)
+	start, startNote := adjustStartForMode(key, startFrom(after), today, dailySync, lookbackDays)
 	if startNote != "" {
 		slog.Info("backfill: adjusted start", "provider", key, "after", start, "note", startNote)
 	}
-
 	slog.Info("backfill: starting", "provider", key, "after", start)
 
-	var fetchedTotal int
-	var insertedTotal int
-	var skippedTotal int
-	var maxSeenDate *time.Time
-
+	var progress backfillProgress
 	err := provider.FetchEachObserved(ctx, a, start, observe, func(records []provider.Record) error {
-		fetchedTotal += len(records)
-		if len(records) == 0 {
-			return nil
-		}
-
-		var valid []provider.Record
-		for _, r := range records {
-			if ExcludedQuotes[r.Quote] || ExcludedQuotes[r.Base] {
-				continue
-			}
-			if r.Rate <= 0 || math.IsNaN(r.Rate) || math.IsInf(r.Rate, 0) {
-				slog.Warn("invalid rate skipped", "provider", key, "base", r.Base, "quote", r.Quote, "rate", r.Rate)
-				continue
-			}
-			r.Provider = key
-			valid = append(valid, r)
-			maxSeenDate = maxTimePtr(maxSeenDate, &r.Date)
-		}
-		if len(valid) == 0 {
-			return nil
-		}
-
-		inserted, err := bulkUpsertRates(ctx, pool, valid)
-		if err != nil {
-			return err
-		}
-		insertedTotal += inserted
-		skippedTotal += len(valid) - inserted
-		slog.Debug("backfill: inserted rates", "provider", key, "count", inserted)
-
-		if inserted > 0 {
-			currencies := uniqueCurrencies(valid)
-			if err := domain.UpsertCurrencySummary(ctx, pool, key, currencies); err != nil {
-				slog.Warn("backfill: currency summary failed", "provider", key, "err", err)
-			}
-		}
-		return nil
+		return processBatch(ctx, pool, key, records, &progress)
 	})
-
 	if err != nil {
-		var unavail *provider.Unavailable
-		if ok := isUnavailable(err, &unavail); ok {
-			slog.Warn("backfill: provider unavailable", "provider", key, "msg", unavail.Msg)
-			result.Status = "unavailable"
-			result.Unavailable = true
-			result.Error = unavail.Msg
-			result.Fetched = fetchedTotal
-			result.Inserted = insertedTotal
-			result.Skipped = skippedTotal
-			return result
-		}
-		if provider.IsTransient(err) {
-			slog.Error("backfill: transient error", "provider", key, "err", err)
-			result.Status = "error"
-			result.Error = err.Error()
-			result.Fetched = fetchedTotal
-			result.Inserted = insertedTotal
-			result.Skipped = skippedTotal
-			return result
-		}
-		slog.Error("backfill: error", "provider", key, "err", err)
-		result.Status = "error"
-		result.Error = err.Error()
-		result.Fetched = fetchedTotal
-		result.Inserted = insertedTotal
-		result.Skipped = skippedTotal
-		return result
+		return classifyFetchError(err, result, progress, key)
 	}
-
-	if maxSeenDate != nil {
-		result.LastSyncedAfter = maxTimePtr(result.LastSyncedAfter, maxSeenDate)
-	}
-
-	if fetchedTotal == 0 && insertedTotal == 0 && result.LastSyncedBefore == nil {
-		slog.Warn("backfill: empty result", "provider", key, "fetched", fetchedTotal, "inserted", insertedTotal, "skipped", skippedTotal, "duration_ms", time.Since(startedAt).Milliseconds(), "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
-		result.Status = "empty"
-		result.Fetched = fetchedTotal
-		result.Inserted = insertedTotal
-		result.Skipped = skippedTotal
-		return result
-	}
-
-	slog.Info("backfill: completed", "provider", key, "fetched", fetchedTotal, "inserted", insertedTotal, "skipped", skippedTotal, "duration_ms", time.Since(startedAt).Milliseconds(), "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
-	result.Status = "success"
-	result.Fetched = fetchedTotal
-	result.Inserted = insertedTotal
-	result.Skipped = skippedTotal
-	return result
+	return finalizeSuccess(result, progress, startedAt, key)
 }
 
 func formatRunningProvider(key string, state runningProvider, now time.Time) string {
