@@ -182,8 +182,8 @@ func TestLoadBuildsDatabaseURLWithDefaultSSLMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if !strings.Contains(cfg.DatabaseURL, "sslmode=disable") {
-		t.Fatalf("expected default sslmode=disable in %q", cfg.DatabaseURL)
+	if !strings.Contains(cfg.DatabaseURL, "sslmode=require") {
+		t.Fatalf("expected default sslmode=require in %q", cfg.DatabaseURL)
 	}
 }
 

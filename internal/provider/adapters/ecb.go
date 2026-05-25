@@ -7,6 +7,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +15,22 @@ import (
 	"github.com/mmayadag/fx-rates/internal/provider"
 )
 
-const ecbSDMXURL = "https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A"
+const (
+	ecbSDMXURL              = "https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A"
+	defaultECBMaxBufferSize = 10 * 1024 * 1024 // 10MB — ECB daily CSV is ~100KB; this is generous headroom.
+)
+
+// ecbBufferCap reads the per-line scanner cap from ECB_MAX_RESPONSE_BYTES,
+// falling back to defaultECBMaxBufferSize. Lazily evaluated so .env-loaded
+// values are honoured.
+func ecbBufferCap() int {
+	if v := os.Getenv("ECB_MAX_RESPONSE_BYTES"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return defaultECBMaxBufferSize
+}
 
 type ECB struct{}
 
@@ -50,7 +66,7 @@ func (a *ECB) Fetch(after, upto time.Time) ([]provider.Record, error) {
 func parseECBStream(r io.Reader) ([]provider.Record, error) {
 	var records []provider.Record
 	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 1024*1024), 1024*1024)
+	scanner.Buffer(make([]byte, 64*1024), ecbBufferCap())
 
 	var headers []string
 	for scanner.Scan() {

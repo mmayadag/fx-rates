@@ -45,7 +45,7 @@ Loading order: process environment wins, then `.env.local` (developer overrides,
 | Variable | Notes |
 |---|---|
 | `DB_USER`, `DB_PASSWORD`, `DB_NAME`, `DB_HOST`, `DB_PORT` | Standard Postgres connection. |
-| `DB_SSLMODE` | Use `require` in production. `disable` is fine for local Docker. |
+| `DB_SSLMODE` | Defaults to `require`. Set to `disable` only for local Postgres without TLS. |
 | `DATABASE_URL` (alt.) | Single DSN alternative. Takes precedence over the split `DB_*` vars when set. |
 
 ### Sync behaviour

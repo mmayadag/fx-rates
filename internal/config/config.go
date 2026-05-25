@@ -23,7 +23,7 @@ type Config struct {
 	DBName              string        `envconfig:"DB_NAME"`
 	DBHost              string        `envconfig:"DB_HOST"`
 	DBPort              string        `envconfig:"DB_PORT"`
-	DBSSLMode           string        `envconfig:"DB_SSLMODE" default:"disable"`
+	DBSSLMode           string        `envconfig:"DB_SSLMODE" default:"require"`
 	DBMaxConns          int32         `envconfig:"DB_MAX_CONNECTIONS" default:"10"`
 	DBMinConns          int32         `envconfig:"DB_MIN_CONNECTIONS" default:"5"`
 	DBMaxConnLifetime   time.Duration `envconfig:"DB_MAX_CONN_LIFETIME" default:"30m"`
@@ -141,7 +141,7 @@ func (c Config) buildDatabaseURL() (string, error) {
 
 	sslMode := strings.TrimSpace(c.DBSSLMode)
 	if sslMode == "" {
-		sslMode = "disable"
+		sslMode = "require"
 	}
 
 	return (&url.URL{
