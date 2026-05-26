@@ -92,7 +92,16 @@ func run() int {
 		slog.Error("pool init failed", "error", err)
 		return 1
 	}
-	defer pool.Close()
+	defer func() {
+		stat := pool.Stat()
+		slog.Info("pool closing",
+			"acquired_conns", stat.AcquiredConns(),
+			"idle_conns", stat.IdleConns(),
+			"total_conns", stat.TotalConns(),
+			"max_conns", stat.MaxConns(),
+		)
+		pool.Close()
+	}()
 
 	if err := db.Seed(setupCtx, pool); err != nil {
 		slog.Error("seed failed", "error", err)
