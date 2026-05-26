@@ -72,8 +72,8 @@ Loading order: process environment wins, then `.env.local` (developer overrides,
 
 | Variable | Default | Notes |
 |---|---|---|
-| `LOG_LEVEL` | derived from `DEBUG` | `debug`, `info`, `warn`, `error` |
-| `DEBUG` | `true` | When `LOG_LEVEL` is unset: `true` → debug, `false` → info. Also gates scheduler heartbeats. |
+| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+| `DEBUG` | `true` | Gates scheduler heartbeat logs. Does not affect log level. |
 | `DEBUG_HEARTBEAT_INTERVAL` | `20s` | Interval for heartbeat logs when `DEBUG=true`. |
 
 ## Make targets

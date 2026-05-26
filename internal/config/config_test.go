@@ -47,10 +47,10 @@ func TestSlogLevel(t *testing.T) {
 		debug    bool
 		want     slog.Level
 	}{
-		{"empty + debug=true → debug", "", true, slog.LevelDebug},
-		{"empty + debug=false → info", "", false, slog.LevelInfo},
-		{"debug overrides debug=false", "debug", false, slog.LevelDebug},
-		{"info overrides debug=true", "info", true, slog.LevelInfo},
+		{"empty defaults to info regardless of debug=true", "", true, slog.LevelInfo},
+		{"empty defaults to info when debug=false", "", false, slog.LevelInfo},
+		{"explicit debug", "debug", false, slog.LevelDebug},
+		{"explicit info wins over debug=true", "info", true, slog.LevelInfo},
 		{"warn", "warn", false, slog.LevelWarn},
 		{"warning alias", "warning", false, slog.LevelWarn},
 		{"error", "error", false, slog.LevelError},

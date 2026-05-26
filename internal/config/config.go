@@ -101,21 +101,16 @@ func (c Config) IsDailySync() bool {
 	return c.SyncMode == "daily_sync"
 }
 
-// SlogLevel returns the configured logging level.
-// Falls back to Debug-derived level (debug if Debug, else info) when LOG_LEVEL is unset.
+// SlogLevel returns the configured logging level. LOG_LEVEL is the sole
+// authority; when unset, defaults to info. DEBUG no longer affects log level.
 func (c Config) SlogLevel() slog.Level {
 	switch c.LogLevel {
 	case "debug":
 		return slog.LevelDebug
-	case "info":
-		return slog.LevelInfo
 	case "warn", "warning":
 		return slog.LevelWarn
 	case "error":
 		return slog.LevelError
-	}
-	if c.Debug {
-		return slog.LevelDebug
 	}
 	return slog.LevelInfo
 }
