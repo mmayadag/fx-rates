@@ -18,7 +18,7 @@ func TestAdjustStartForMode_DailyWithinLookbackUnchanged(t *testing.T) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	start := today.AddDate(0, 0, -3)
 
-	got, note := adjustStartForMode("ECB", start, today, true, 7)
+	got, note := adjustStartForMode(start, today, true, 7)
 	if !got.Equal(start) {
 		t.Fatalf("got %v, want %v (start within 7-day floor)", got, start)
 	}
@@ -32,7 +32,7 @@ func TestAdjustStartForMode_DailyCapsWhenBeyondLookback(t *testing.T) {
 	start := today.AddDate(0, 0, -30)
 	floor := today.AddDate(0, 0, -7)
 
-	got, note := adjustStartForMode("ECB", start, today, true, 7)
+	got, note := adjustStartForMode(start, today, true, 7)
 	if !got.Equal(floor) {
 		t.Fatalf("got %v, want floor %v", got, floor)
 	}
@@ -45,7 +45,7 @@ func TestAdjustStartForMode_DailyZeroStartUsesFloor(t *testing.T) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	floor := today.AddDate(0, 0, -7)
 
-	got, note := adjustStartForMode("ECB", time.Time{}, today, true, 7)
+	got, note := adjustStartForMode(time.Time{}, today, true, 7)
 	if !got.Equal(floor) {
 		t.Fatalf("got %v, want floor %v", got, floor)
 	}
@@ -58,7 +58,7 @@ func TestAdjustStartForMode_DailyLookbackZeroDisablesCap(t *testing.T) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	start := today.AddDate(0, 0, -365)
 
-	got, note := adjustStartForMode("ECB", start, today, true, 0)
+	got, note := adjustStartForMode(start, today, true, 0)
 	if !got.Equal(start) {
 		t.Fatalf("got %v, want %v (lookback=0 should disable cap)", got, start)
 	}
@@ -72,21 +72,21 @@ func TestGetStartDate(t *testing.T) {
 	lastSynced := ptr(time.Date(2024, 6, 1, 0, 0, 0, 0, time.UTC))
 
 	t.Run("returns lastSynced when set", func(t *testing.T) {
-		got := getStartDate("ECB", coverageStart, lastSynced)
+		got := getStartDate(coverageStart, lastSynced)
 		if !got.Equal(*lastSynced) {
 			t.Fatalf("got %v, want %v", got, *lastSynced)
 		}
 	})
 
 	t.Run("falls back to coverageStart when no lastSynced", func(t *testing.T) {
-		got := getStartDate("ECB", coverageStart, nil)
+		got := getStartDate(coverageStart, nil)
 		if !got.Equal(*coverageStart) {
 			t.Fatalf("got %v, want %v", got, *coverageStart)
 		}
 	})
 
 	t.Run("returns nil when both nil", func(t *testing.T) {
-		if got := getStartDate("ECB", nil, nil); got != nil {
+		if got := getStartDate(nil, nil); got != nil {
 			t.Fatalf("expected nil, got %v", got)
 		}
 	})
@@ -450,7 +450,7 @@ func TestFinalizeSuccess_BumpsLastSyncedAfter(t *testing.T) {
 func TestAdjustStartForMode_NotDailySync(t *testing.T) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	start := today.AddDate(0, 0, -30)
-	got, note := adjustStartForMode("ECB", start, today, false, 7)
+	got, note := adjustStartForMode(start, today, false, 7)
 	if !got.Equal(start) {
 		t.Fatalf("full mode should not cap; got %v, want %v", got, start)
 	}

@@ -68,6 +68,16 @@ type RunSummary struct {
 // ExcludedQuotes are currency codes that are never stored (e.g. IMF SDR).
 var ExcludedQuotes = map[string]bool{"XDR": true}
 
+// Provider-run status values stored in BackfillResult.Status. These strings are
+// part of the logged metric contract (see docs/metrics.md) — keep them stable.
+const (
+	statusSuccess     = "success"
+	statusEmpty       = "empty"
+	statusError       = "error"
+	statusUnavailable = "unavailable"
+	statusUpToDate    = "up_to_date"
+)
+
 // BackfillAll runs the one-shot backfill job for the single registered provider.
 func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	entries := registry.All()
@@ -147,16 +157,16 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	summary.InsertedCount = result.Inserted
 	summary.SkippedCount = result.Skipped
 	switch result.Status {
-	case "success":
+	case statusSuccess:
 		summary.SucceededProviders = 1
-	case "empty":
+	case statusEmpty:
 		summary.EmptyProviders = 1
-	case "error":
+	case statusError:
 		summary.FailedProviders = 1
 		summary.FailedProviderNames = append(summary.FailedProviderNames, entry.Key)
-	case "unavailable":
+	case statusUnavailable:
 		summary.UnavailableProviders = 1
-	case "up_to_date":
+	case statusUpToDate:
 		summary.UpToDateProviders = 1
 	}
 	snapshot := summary
@@ -180,9 +190,9 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 		)
 	} else {
 		switch result.Status {
-		case "error":
+		case statusError:
 			slog.Error("backfill: provider failed", "provider", entry.Key, "progress", "1/1", "error", result.Error, "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
-		case "unavailable":
+		case statusUnavailable:
 			slog.Warn("backfill: provider unavailable", "provider", entry.Key, "progress", "1/1", "msg", result.Error, "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
 		default:
 			slog.Info("backfill: progress", "provider", entry.Key, "progress", "1/1", "completed", 1, "total", 1, "status", result.Status, "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
@@ -457,7 +467,7 @@ func classifyFetchError(err error, result BackfillResult, progress backfillProgr
 	var unavail *provider.Unavailable
 	if isUnavailable(err, &unavail) {
 		slog.Warn("backfill: provider unavailable", "provider", key, "msg", unavail.Msg)
-		result.Status = "unavailable"
+		result.Status = statusUnavailable
 		result.Unavailable = true
 		result.Error = unavail.Msg
 		return result
@@ -467,7 +477,7 @@ func classifyFetchError(err error, result BackfillResult, progress backfillProgr
 	} else {
 		slog.Error("backfill: error", "provider", key, "err", err)
 	}
-	result.Status = "error"
+	result.Status = statusError
 	result.Error = err.Error()
 	return result
 }
@@ -484,12 +494,12 @@ func finalizeSuccess(result BackfillResult, progress backfillProgress, startedAt
 
 	if progress.fetched == 0 && progress.inserted == 0 && result.LastSyncedBefore == nil {
 		slog.Warn("backfill: empty result", "provider", key, "fetched", progress.fetched, "inserted", progress.inserted, "skipped", progress.skipped, "duration_ms", time.Since(startedAt).Milliseconds(), "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
-		result.Status = "empty"
+		result.Status = statusEmpty
 		return result
 	}
 
 	slog.Info("backfill: completed", "provider", key, "fetched", progress.fetched, "inserted", progress.inserted, "skipped", progress.skipped, "duration_ms", time.Since(startedAt).Milliseconds(), "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
-	result.Status = "success"
+	result.Status = statusSuccess
 	return result
 }
 
@@ -502,15 +512,15 @@ func BackfillProvider(ctx context.Context, pool *pgxpool.Pool, key string, a pro
 		LastSyncedAfter:  cloneTimePtr(lastSynced),
 	}
 
-	after := getStartDate(key, coverageStart, lastSynced)
+	after := getStartDate(coverageStart, lastSynced)
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	if isUpToDate(after, today) {
 		slog.Info("backfill: up to date", "provider", key, "last_synced_before", result.LastSyncedBefore, "last_synced_after", result.LastSyncedAfter)
-		result.Status = "up_to_date"
+		result.Status = statusUpToDate
 		return result
 	}
 
-	start, startNote := adjustStartForMode(key, startFrom(after), today, dailySync, lookbackDays)
+	start, startNote := adjustStartForMode(startFrom(after), today, dailySync, lookbackDays)
 	if startNote != "" {
 		slog.Info("backfill: adjusted start", "provider", key, "after", start, "note", startNote)
 	}
@@ -582,8 +592,7 @@ func maxTimePtr(current *time.Time, candidate *time.Time) *time.Time {
 // outage doesn't force a multi-week backfill into a 30m timeout window.
 // lookbackDays = 0 disables the cap (preserves the original no-op behaviour
 // for callers that haven't opted in).
-func adjustStartForMode(key string, start, today time.Time, dailySync bool, lookbackDays int) (time.Time, string) {
-	_ = key
+func adjustStartForMode(start, today time.Time, dailySync bool, lookbackDays int) (time.Time, string) {
 	if !dailySync || lookbackDays <= 0 {
 		return start, ""
 	}
@@ -595,7 +604,7 @@ func adjustStartForMode(key string, start, today time.Time, dailySync bool, look
 }
 
 // getStartDate returns lastSynced if rates exist, otherwise coverageStart.
-func getStartDate(_ string, coverageStart *time.Time, lastSynced *time.Time) *time.Time {
+func getStartDate(coverageStart *time.Time, lastSynced *time.Time) *time.Time {
 	if lastSynced != nil {
 		return lastSynced
 	}
@@ -682,9 +691,5 @@ func uniqueCurrencies(records []provider.Record) []string {
 }
 
 func isUnavailable(err error, target **provider.Unavailable) bool {
-	u, ok := err.(*provider.Unavailable)
-	if ok {
-		*target = u
-	}
-	return ok
+	return errors.As(err, target)
 }
