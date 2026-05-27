@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"regexp"
 	"syscall"
 	"time"
 
@@ -13,6 +14,16 @@ import (
 	"github.com/mmayadag/fx-rates/internal/db"
 	"github.com/mmayadag/fx-rates/internal/scheduler"
 )
+
+// dsnCredentialsRe matches the "user:password@" portion of a postgres/pgx DSN
+// so it can be masked before an error string reaches the logs.
+var dsnCredentialsRe = regexp.MustCompile(`(?i)(postgres(?:ql)?|pgx5?)://[^\s:/@]+:[^\s@/]+@`)
+
+// redactDSN masks credentials in any DSN embedded in s. Connection errors from
+// pgx / golang-migrate can carry the full DSN, including the password.
+func redactDSN(s string) string {
+	return dsnCredentialsRe.ReplaceAllString(s, "$1://***:***@")
+}
 
 const setupTimeout = 2 * time.Minute
 
@@ -73,7 +84,7 @@ func run() int {
 
 	if cfg.RunMigrations {
 		if err := db.RunMigrations(cfg.DatabaseURL); err != nil {
-			slog.Error("migrations failed", "error", err)
+			slog.Error("migrations failed", "error", redactDSN(err.Error()))
 			return 1
 		}
 		slog.Info("migrations applied")
@@ -89,7 +100,7 @@ func run() int {
 		HealthCheckPeriod: cfg.DBHealthCheckPeriod,
 	})
 	if err != nil {
-		slog.Error("pool init failed", "error", err)
+		slog.Error("pool init failed", "error", redactDSN(err.Error()))
 		return 1
 	}
 	defer func() {

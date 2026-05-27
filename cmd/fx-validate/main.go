@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -175,11 +176,19 @@ func writeCSV(out io.Writer, results []validator.Result) error {
 }
 
 func outputWriter(path string) (io.Writer, io.Closer, error) {
-	if strings.TrimSpace(path) == "" {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
 		return os.Stdout, nil, nil
 	}
 
-	file, err := os.Create(path)
+	clean := filepath.Clean(trimmed)
+	for _, seg := range strings.Split(clean, string(os.PathSeparator)) {
+		if seg == ".." {
+			return nil, nil, fmt.Errorf("invalid -output path %q: must not contain '..' segments", path)
+		}
+	}
+
+	file, err := os.Create(clean)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -38,7 +38,7 @@ Set the scheduler's hard deadline (`activeDeadlineSeconds` in k8s) slightly abov
 
 Full variable reference is in the [README](../README.md#configuration). Production-relevant points:
 
-- **`DB_SSLMODE` defaults to `require`** — leave it. Only set `disable` for a local TLS-less Postgres.
+- **`DB_SSLMODE`** defaults to `require`, which encrypts traffic but does **not** verify the server certificate — it does not protect against a man-in-the-middle. For production against a managed Postgres over an untrusted network, use `verify-full` and supply the CA via `sslrootcert` in `DATABASE_URL`. Only set `disable` for a local TLS-less Postgres.
 - Pass DB credentials via a secret store (k8s `Secret`, ECS secrets), never baked into the image or a committed `.env`.
 - **`RUN_MIGRATIONS`**: leave `true` for the app to apply migrations on startup, or set `false` and run them out-of-band (see below) if you want migrations gated behind a separate deploy step.
 - **`SYNC_MODE=daily_sync`** for the recurring production job; `full` only for initial load or recovery.
