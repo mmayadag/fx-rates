@@ -4,7 +4,6 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 LOCAL_TEST_COMPOSE := docker compose -f local_test/docker-compose.yml
 ENV_FILE ?= .env
-BACKFILL_CONCURRENCY ?= 10
 ENV_LOADER = set -a; if [ -f "$(ENV_FILE)" ]; then . "$(ENV_FILE)"; fi; set +a;
 
 .PHONY: help build release-build sqlc-generate test coverage test-integration run run-daily validate-fx daily-sync-example local-run local-run-daily local-db-up local-db-down local-db-logs local-db-ps local-smoke local-smoke-daily
@@ -64,7 +63,6 @@ test-integration: local-db-up
 
 run:
 	@$(ENV_LOADER) \
-	BACKFILL_CONCURRENCY="$${BACKFILL_CONCURRENCY:-$(BACKFILL_CONCURRENCY)}" \
 	GOTOOLCHAIN='go1.26.2' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
@@ -72,7 +70,6 @@ run:
 run-daily:
 	@$(ENV_LOADER) \
 	SYNC_MODE='daily_sync' \
-	BACKFILL_CONCURRENCY="$${BACKFILL_CONCURRENCY:-$(BACKFILL_CONCURRENCY)}" \
 	GOTOOLCHAIN='go1.26.2' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
@@ -98,7 +95,6 @@ local-run:
 	DB_HOST="$${DB_HOST:?DB_HOST is required}" \
 	DB_PORT="$${DB_PORT:?DB_PORT is required}" \
 	DB_SSLMODE="$${DB_SSLMODE:?DB_SSLMODE is required}" \
-	BACKFILL_CONCURRENCY="$${BACKFILL_CONCURRENCY:-$(BACKFILL_CONCURRENCY)}" \
 	GOTOOLCHAIN='go1.26.2' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
@@ -112,7 +108,6 @@ local-run-daily:
 	DB_PORT="$${DB_PORT:?DB_PORT is required}" \
 	DB_SSLMODE="$${DB_SSLMODE:?DB_SSLMODE is required}" \
 	SYNC_MODE='daily_sync' \
-	BACKFILL_CONCURRENCY="$${BACKFILL_CONCURRENCY:-$(BACKFILL_CONCURRENCY)}" \
 	GOTOOLCHAIN='go1.26.2' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
@@ -137,7 +132,6 @@ local-smoke: local-db-up
 	DB_HOST="$${DB_HOST:?DB_HOST is required}" \
 	DB_PORT="$${DB_PORT:?DB_PORT is required}" \
 	DB_SSLMODE="$${DB_SSLMODE:?DB_SSLMODE is required}" \
-	BACKFILL_CONCURRENCY="$${BACKFILL_CONCURRENCY:-$(BACKFILL_CONCURRENCY)}" \
 	GOTOOLCHAIN='go1.26.2' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
@@ -151,7 +145,6 @@ local-smoke-daily: local-db-up
 	DB_PORT="$${DB_PORT:?DB_PORT is required}" \
 	DB_SSLMODE="$${DB_SSLMODE:?DB_SSLMODE is required}" \
 	SYNC_MODE='daily_sync' \
-	BACKFILL_CONCURRENCY="$${BACKFILL_CONCURRENCY:-$(BACKFILL_CONCURRENCY)}" \
 	GOTOOLCHAIN='go1.26.2' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .

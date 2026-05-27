@@ -125,11 +125,10 @@ func TestLoadRejectsInvalidSyncMode(t *testing.T) {
 
 func TestLogValueOmitsSensitiveFields(t *testing.T) {
 	cfg := Config{
-		DatabaseURL:         "postgres://secret",
-		DBPassword:          "topsecret",
-		DBMaxConns:          12,
-		BackfillConcurrency: 4,
-		Debug:               true,
+		DatabaseURL: "postgres://secret",
+		DBPassword:  "topsecret",
+		DBMaxConns:  12,
+		Debug:       true,
 	}
 
 	var buf bytes.Buffer
@@ -137,7 +136,7 @@ func TestLogValueOmitsSensitiveFields(t *testing.T) {
 	logger.Info("config", "cfg", cfg)
 
 	out := buf.String()
-	for _, want := range []string{`"max_conns":12`, `"concurrency":4`, `"debug":true`} {
+	for _, want := range []string{`"max_conns":12`, `"debug":true`} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("expected %q in log output %s", want, out)
 		}
@@ -268,7 +267,6 @@ func TestLoadAppliesRuntimeDefaults(t *testing.T) {
 	unsetEnvForTest(t, "DB_MAX_CONN_LIFETIME")
 	unsetEnvForTest(t, "DB_MAX_CONN_IDLE_TIME")
 	unsetEnvForTest(t, "DB_HEALTH_CHECK_PERIOD")
-	unsetEnvForTest(t, "BACKFILL_CONCURRENCY")
 	unsetEnvForTest(t, "DEBUG")
 	unsetEnvForTest(t, "SYNC_MODE")
 	unsetEnvForTest(t, "DAILY_SYNC_TIMEOUT")
@@ -296,9 +294,6 @@ func TestLoadAppliesRuntimeDefaults(t *testing.T) {
 	}
 	if cfg.DailySyncLookback != 7 {
 		t.Fatalf("DailySyncLookback = %d, want 7", cfg.DailySyncLookback)
-	}
-	if cfg.BackfillConcurrency != 10 {
-		t.Fatalf("BackfillConcurrency = %d, want 10", cfg.BackfillConcurrency)
 	}
 	if !cfg.Debug {
 		t.Fatal("expected Debug default to be true")

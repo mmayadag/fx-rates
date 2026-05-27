@@ -119,7 +119,6 @@ func run() int {
 		lookback = cfg.DailySyncLookback
 	}
 	if err := scheduler.BackfillAll(syncCtx, pool, scheduler.Options{
-		Concurrency:       cfg.BackfillConcurrency,
 		Debug:             cfg.Debug,
 		HeartbeatInterval: heartbeatInterval,
 		DailySync:         cfg.IsDailySync(),

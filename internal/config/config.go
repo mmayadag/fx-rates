@@ -29,7 +29,6 @@ type Config struct {
 	DBMaxConnLifetime   time.Duration `envconfig:"DB_MAX_CONN_LIFETIME" default:"30m"`
 	DBMaxConnIdleTime   time.Duration `envconfig:"DB_MAX_CONN_IDLE_TIME" default:"5m"`
 	DBHealthCheckPeriod time.Duration `envconfig:"DB_HEALTH_CHECK_PERIOD" default:"30s"`
-	BackfillConcurrency int           `envconfig:"BACKFILL_CONCURRENCY" default:"10"`
 	Debug               bool          `envconfig:"DEBUG" default:"true"`
 	SyncMode            string        `envconfig:"SYNC_MODE" default:"daily_sync"`
 	DailySyncTimeout    string        `envconfig:"DAILY_SYNC_TIMEOUT"`
@@ -74,7 +73,6 @@ func Load() (Config, error) {
 func (c Config) LogValue() slog.Value {
 	return slog.GroupValue(
 		slog.Int("max_conns", int(c.DBMaxConns)),
-		slog.Int("concurrency", c.BackfillConcurrency),
 		slog.Bool("debug", c.Debug),
 		slog.Bool("run_migrations", c.RunMigrations),
 	)
