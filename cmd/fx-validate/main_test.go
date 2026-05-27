@@ -2,6 +2,28 @@ package main
 
 import "testing"
 
+func TestValidateDateFlag(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr bool
+	}{
+		{"empty is allowed", "", false},
+		{"valid date", "2024-10-01", false},
+		{"wrong format", "01-10-2024", true},
+		{"not a date", "yesterday", true},
+		{"impossible date", "2024-13-40", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateDateFlag("date-from", tt.value)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateDateFlag(%q) error = %v, wantErr %v", tt.value, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestNormalizeProviderFilter(t *testing.T) {
 	tests := []struct {
 		input   string

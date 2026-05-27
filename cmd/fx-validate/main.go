@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mmayadag/fx-rates/internal/config"
 	"github.com/mmayadag/fx-rates/internal/db"
@@ -44,6 +45,12 @@ func main() {
 
 	if cfg.limit <= 0 {
 		exitErr(fmt.Errorf("limit must be greater than zero"))
+	}
+	if err := validateDateFlag("date-from", cfg.dateFrom); err != nil {
+		exitErr(err)
+	}
+	if err := validateDateFlag("date-to", cfg.dateTo); err != nil {
+		exitErr(err)
 	}
 	providerFilter, err := normalizeProviderFilter(cfg.provider)
 	if err != nil {
@@ -124,6 +131,19 @@ func fetchRecords(ctx context.Context, pool *pgxpool.Pool, cfg filters) ([]valid
 		})
 	}
 	return records, nil
+}
+
+// validateDateFlag rejects a non-empty date flag that isn't YYYY-MM-DD, giving
+// a clear message up front instead of an opaque database cast error. An empty
+// value means "no filter" and is allowed.
+func validateDateFlag(name, value string) error {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	if _, err := time.Parse("2006-01-02", value); err != nil {
+		return fmt.Errorf("-%s must be in YYYY-MM-DD format: %q", name, value)
+	}
+	return nil
 }
 
 func normalizeProviderFilter(value string) (string, error) {

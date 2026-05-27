@@ -79,6 +79,12 @@ spec:
           containers:
             - name: fx-rates
               image: <registry>/fx-rates:v0.1.0
+              securityContext:
+                readOnlyRootFilesystem: true
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                capabilities:
+                  drop: ["ALL"]
               env:
                 - name: SYNC_MODE
                   value: "daily_sync"
@@ -103,7 +109,7 @@ spec:
 Notes:
 - `restartPolicy: Never` + `backoffLimit: 1` means one retry on failure, then the Job is marked failed — alert on that, not on individual pod restarts.
 - `concurrencyPolicy: Forbid` prevents a slow run from overlapping the next schedule.
-- The image runs as UID `65534`; no `securityContext` write access is needed (read-only root FS is compatible).
+- The image runs as UID `65534` on a `scratch` base, so the `securityContext` above (read-only root FS, no privilege escalation, all capabilities dropped) is fully compatible — the job needs no writable filesystem.
 
 ## Initial backfill
 
