@@ -76,6 +76,7 @@ const (
 	statusError       = "error"
 	statusUnavailable = "unavailable"
 	statusUpToDate    = "up_to_date"
+	statusInterrupted = "interrupted"
 )
 
 // BackfillAll runs the one-shot backfill job for the single registered provider.
@@ -123,6 +124,9 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 		logCancellation(ctx, &mu, running, 1, completed)
 		logRunSummary(summarySnapshot, true)
 		emitRunMetric(summarySnapshot, opts.DailySync, time.Since(runStart), "interrupted")
+		// Record an audit row even though the provider never ran, so an
+		// interrupted run is never silently absent from sync_runs.
+		recordSyncRun(pool, BackfillResult{Provider: entry.Key, Status: statusInterrupted}, opts.DailySync, runStart, time.Now().UTC())
 		return ctx.Err()
 	}
 
