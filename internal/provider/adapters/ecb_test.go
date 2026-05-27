@@ -118,29 +118,47 @@ func TestECBParseRowEdgeCases(t *testing.T) {
 	})
 }
 
-func TestECBBufferCap(t *testing.T) {
+func TestECBResponseCap(t *testing.T) {
 	t.Run("default when env unset", func(t *testing.T) {
 		t.Setenv("ECB_MAX_RESPONSE_BYTES", "")
-		if got := ecbBufferCap(); got != defaultECBMaxBufferSize {
-			t.Fatalf("ecbBufferCap() = %d, want %d", got, defaultECBMaxBufferSize)
+		if got := ecbResponseCap(); got != defaultECBMaxResponseBytes {
+			t.Fatalf("ecbResponseCap() = %d, want %d", got, defaultECBMaxResponseBytes)
 		}
 	})
 	t.Run("env override", func(t *testing.T) {
 		t.Setenv("ECB_MAX_RESPONSE_BYTES", "2048")
-		if got := ecbBufferCap(); got != 2048 {
-			t.Fatalf("ecbBufferCap() = %d, want 2048", got)
+		if got := ecbResponseCap(); got != 2048 {
+			t.Fatalf("ecbResponseCap() = %d, want 2048", got)
 		}
 	})
 	t.Run("invalid env falls back to default", func(t *testing.T) {
 		t.Setenv("ECB_MAX_RESPONSE_BYTES", "abc")
-		if got := ecbBufferCap(); got != defaultECBMaxBufferSize {
-			t.Fatalf("ecbBufferCap() = %d, want %d", got, defaultECBMaxBufferSize)
+		if got := ecbResponseCap(); got != defaultECBMaxResponseBytes {
+			t.Fatalf("ecbResponseCap() = %d, want %d", got, defaultECBMaxResponseBytes)
 		}
 	})
 	t.Run("zero or negative env falls back to default", func(t *testing.T) {
 		t.Setenv("ECB_MAX_RESPONSE_BYTES", "0")
-		if got := ecbBufferCap(); got != defaultECBMaxBufferSize {
-			t.Fatalf("ecbBufferCap() = %d, want %d", got, defaultECBMaxBufferSize)
+		if got := ecbResponseCap(); got != defaultECBMaxResponseBytes {
+			t.Fatalf("ecbResponseCap() = %d, want %d", got, defaultECBMaxResponseBytes)
 		}
 	})
+}
+
+func TestParseECBStreamRejectsOversizedResponse(t *testing.T) {
+	t.Setenv("ECB_MAX_RESPONSE_BYTES", "128")
+
+	var b strings.Builder
+	b.WriteString("FREQ,CURRENCY,OBS_VALUE,TIME_PERIOD\n")
+	for i := 0; i < 50; i++ {
+		b.WriteString("D,USD,1.08,2024-01-02\n")
+	}
+
+	_, err := parseECBStream(strings.NewReader(b.String()))
+	if err == nil {
+		t.Fatal("expected error for response exceeding the cap")
+	}
+	if !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
