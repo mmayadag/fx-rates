@@ -118,6 +118,7 @@ fx-rates -version           # prints the stamped build version
 
 ## Documentation
 
+- [`docs/DEPLOYMENT.md`](./docs/DEPLOYMENT.md) — container build, k8s CronJob runbook, exit codes, alerting, troubleshooting
 - [`docs/database-schema.md`](./docs/database-schema.md) — table layouts, idempotency contract, useful audit queries
 - [`docs/metrics.md`](./docs/metrics.md) — structured log event contract for dashboards and alerts
 - [`docs/providers.md`](./docs/providers.md) — provider catalogue
