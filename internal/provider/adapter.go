@@ -93,14 +93,9 @@ func IsTransient(err error) bool {
 	return false
 }
 
-// FetchEach calls fn for each batch of records, chunking by BackfillRange days.
-// Mirrors Ruby's Adapter.fetch_each exactly.
-func FetchEach(ctx context.Context, a Adapter, after time.Time, fn func([]Record) error) error {
-	return FetchEachObserved(ctx, a, after, nil, fn)
-}
-
-// FetchEachObserved behaves like FetchEach and emits lifecycle events for the
-// current fetch window, retry state, and last transient error.
+// FetchEachObserved calls fn for each batch of records, chunking by
+// BackfillRange days, and emits lifecycle events for the current fetch window,
+// retry state, and last transient error. A nil observe is allowed.
 func FetchEachObserved(ctx context.Context, a Adapter, after time.Time, observe FetchObserver, fn func([]Record) error) error {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	if !after.IsZero() && !after.Before(today) {

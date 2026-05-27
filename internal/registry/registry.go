@@ -19,16 +19,6 @@ func All() []Entry {
 	return all
 }
 
-// Get returns the Adapter for a given key, or nil if not found.
-func Get(key string) provider.Adapter {
-	for _, e := range all {
-		if e.Key == key {
-			return e.Adapter
-		}
-	}
-	return nil
-}
-
 var all = []Entry{
 	{"ECB", &adapters.ECB{}},
 }

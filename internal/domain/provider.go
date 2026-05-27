@@ -46,16 +46,6 @@ func LoadAll(ctx context.Context, pool *pgxpool.Pool) ([]Provider, error) {
 	return providers, nil
 }
 
-// GetLastSynced returns the most recent date for which rates exist for this provider.
-// Returns nil if no rates have been imported yet.
-func GetLastSynced(ctx context.Context, pool *pgxpool.Pool, providerKey string) (*time.Time, error) {
-	d, err := sqlcgen.New(pool).GetLastSyncedForProvider(ctx, providerKey)
-	if err != nil {
-		return nil, err
-	}
-	return sqlcgen.DateToTimePtr(d), nil
-}
-
 // GetAllLastSynced returns the most recent synced date for every provider in a
 // single query instead of one query per provider. Providers with no rates are
 // omitted from the returned map.
