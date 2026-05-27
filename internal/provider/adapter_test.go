@@ -30,7 +30,7 @@ func TestFetchEachStartsAfterExclusiveDate(t *testing.T) {
 	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -20)
 	stub := &fetchEachStub{}
 
-	if err := FetchEach(context.Background(), stub, start, func([]Record) error { return nil }); err != nil {
+	if err := FetchEachObserved(context.Background(), stub, start, nil, func([]Record) error { return nil }); err != nil {
 		t.Fatalf("FetchEach returned error: %v", err)
 	}
 	if len(stub.ranges) == 0 {
@@ -48,7 +48,7 @@ func TestFetchEachUpToDate(t *testing.T) {
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	stub := &fetchEachStub{}
 
-	if err := FetchEach(context.Background(), stub, today, func([]Record) error { return nil }); err != nil {
+	if err := FetchEachObserved(context.Background(), stub, today, nil, func([]Record) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(stub.ranges) != 0 {
@@ -63,7 +63,7 @@ func TestFetchEachContextCancelled(t *testing.T) {
 	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -10)
 	stub := &fetchEachStub{}
 
-	err := FetchEach(ctx, stub, start, func([]Record) error { return nil })
+	err := FetchEachObserved(ctx, stub, start, nil, func([]Record) error { return nil })
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context.Canceled, got %v", err)
 	}
@@ -83,7 +83,7 @@ func TestFetchEachSingleShot(t *testing.T) {
 	singleShotStub := &zeroRangeStub{}
 	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -5)
 
-	if err := FetchEach(context.Background(), singleShotStub, start, func([]Record) error { return nil }); err != nil {
+	if err := FetchEachObserved(context.Background(), singleShotStub, start, nil, func([]Record) error { return nil }); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(singleShotStub.ranges) != 1 {
@@ -106,7 +106,7 @@ func TestFetchEachNonTransientErrorAborts(t *testing.T) {
 	want := errors.New("fatal error")
 	stub := &fetchEachStub{fetchErr: want, callLimit: 1}
 
-	err := FetchEach(context.Background(), stub, start, func([]Record) error { return nil })
+	err := FetchEachObserved(context.Background(), stub, start, nil, func([]Record) error { return nil })
 	if !errors.Is(err, want) {
 		t.Fatalf("expected fatal error, got %v", err)
 	}
@@ -125,7 +125,7 @@ func TestFetchEachMaxRetriesExceeded(t *testing.T) {
 		cancel()
 	}()
 
-	err := FetchEach(ctx, stub, start, func([]Record) error { return nil })
+	err := FetchEachObserved(ctx, stub, start, nil, func([]Record) error { return nil })
 	if err == nil {
 		t.Fatal("expected error when retries exhausted or context cancelled")
 	}
