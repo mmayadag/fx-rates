@@ -1,9 +1,31 @@
 package main
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
+
+func TestResolveExitCode(t *testing.T) {
+	tests := []struct {
+		name      string
+		signalled bool
+		runErr    error
+		want      int
+	}{
+		{"clean run", false, nil, 0},
+		{"run error", false, errors.New("boom"), 1},
+		{"signal received", true, nil, 130},
+		{"signal takes precedence over error", true, errors.New("boom"), 130},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := resolveExitCode(tt.signalled, tt.runErr); got != tt.want {
+				t.Fatalf("resolveExitCode(%v, %v) = %d, want %d", tt.signalled, tt.runErr, got, tt.want)
+			}
+		})
+	}
+}
 
 func TestRedactDSN(t *testing.T) {
 	tests := []struct {

@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"regexp"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -67,7 +68,7 @@ func run() int {
 	slog.Info("starting fx-rates", "version", version, "sync_mode", cfg.SyncMode)
 	slog.Info("timeouts configured", "setup", setupTimeout.String(), "sync", syncTimeout.String())
 
-	exitCode := 0
+	var signalled atomic.Bool
 	stopSignals := make(chan os.Signal, 1)
 	signal.Notify(stopSignals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stopSignals)
@@ -75,7 +76,7 @@ func run() int {
 	go func() {
 		sig := <-stopSignals
 		slog.Warn("shutdown requested", "signal", sig.String())
-		exitCode = 130
+		signalled.Store(true)
 		baseCancel()
 	}()
 
@@ -129,6 +130,7 @@ func run() int {
 	if cfg.IsDailySync() {
 		lookback = cfg.DailySyncLookback
 	}
+	var syncErr error
 	if err := scheduler.BackfillAll(syncCtx, pool, scheduler.Options{
 		Debug:             cfg.Debug,
 		HeartbeatInterval: heartbeatInterval,
@@ -136,12 +138,23 @@ func run() int {
 		DailySyncLookback: lookback,
 	}); err != nil {
 		slog.Error("sync job failed", "error", err)
-		if exitCode == 0 {
-			exitCode = 1
-		}
+		syncErr = err
 	} else {
 		slog.Info("sync job completed")
 	}
 
-	return exitCode
+	return resolveExitCode(signalled.Load(), syncErr)
+}
+
+// resolveExitCode maps the run outcome to a process exit code. A received
+// shutdown signal takes precedence (130), then any run error (1), else 0.
+func resolveExitCode(signalled bool, runErr error) int {
+	switch {
+	case signalled:
+		return 130
+	case runErr != nil:
+		return 1
+	default:
+		return 0
+	}
 }
