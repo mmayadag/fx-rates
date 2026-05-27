@@ -20,10 +20,7 @@ import (
 	"github.com/mmayadag/fx-rates/internal/registry"
 )
 
-const defaultConcurrency = 10
-
 type Options struct {
-	Concurrency       int
 	Debug             bool
 	HeartbeatInterval time.Duration
 	DailySync         bool
@@ -85,11 +82,6 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	summary := RunSummary{TotalProviders: 1}
 	runStart := time.Now()
 
-	if opts.Concurrency > 0 {
-		slog.Info("backfill: concurrency configured", "concurrency", opts.Concurrency)
-	} else {
-		slog.Info("backfill: concurrency configured", "concurrency", defaultConcurrency)
-	}
 	slog.Info("backfill: providers queued", "total", 1)
 
 	allProviders, err := domain.LoadAll(ctx, pool)

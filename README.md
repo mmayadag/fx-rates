@@ -56,7 +56,6 @@ Loading order: process environment wins, then `.env.local` (developer overrides,
 | `DAILY_SYNC_TIMEOUT` | mode-dependent | Override only when needed. |
 | `DAILY_SYNC_LOOKBACK_DAYS` | `7` | Cap on how far back a `daily_sync` run reaches. `0` disables. |
 | `RUN_MIGRATIONS` | `true` | Set `false` in production when migrations are run out-of-band. |
-| `BACKFILL_CONCURRENCY` | `10` | Reserved; the current code runs a single provider. |
 
 ### Connection pool
 
