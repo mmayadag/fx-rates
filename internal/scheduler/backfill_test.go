@@ -512,12 +512,15 @@ func TestEmitHeartbeat_Fires(t *testing.T) {
 	running := map[string]runningProvider{}
 	var completed int32 = 1
 
-	go emitHeartbeat(ctx, done, &mu, running, 3, &completed, 10*time.Millisecond)
+	finished := make(chan struct{})
+	go func() {
+		emitHeartbeat(ctx, done, &mu, running, 3, &completed, 10*time.Millisecond)
+		close(finished)
+	}()
 
 	time.Sleep(50 * time.Millisecond)
 	cancel()
-	time.Sleep(20 * time.Millisecond)
-	close(done)
+	<-finished // wait for the goroutine to fully return before reading buf
 
 	output := buf.String()
 	if !strings.Contains(output, "heartbeat") {
