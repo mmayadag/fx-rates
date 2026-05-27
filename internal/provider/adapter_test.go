@@ -131,6 +131,57 @@ func TestFetchEachMaxRetriesExceeded(t *testing.T) {
 	}
 }
 
+// recordingStub returns one record per fetch so the process callback is
+// actually invoked, and counts its fetch calls.
+type recordingStub struct{ calls int }
+
+func (s *recordingStub) BackfillRange() int { return 7 }
+func (s *recordingStub) Fetch(after, upto time.Time) ([]Record, error) {
+	s.calls++
+	return []Record{{Provider: "TEST", Base: "EUR", Quote: "USD", Rate: 1.0}}, nil
+}
+
+func TestFetchEachObservedCancelDuringBackoff(t *testing.T) {
+	// Always-transient error forces a retry; the first backoff is ~2s, so a
+	// cancel at 20ms deterministically lands inside the backoff select.
+	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -3)
+	stub := &fetchEachStub{fetchErr: syscall.ECONNRESET}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		cancel()
+	}()
+
+	err := FetchEachObserved(ctx, stub, start, nil, func([]Record) error { return nil })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context.Canceled during backoff, got %v", err)
+	}
+}
+
+func TestFetchEachObservedStopsWhenProcessFails(t *testing.T) {
+	// Spans multiple batches; the process callback fails on the second batch,
+	// so the walk must abort with that error after exactly two invocations.
+	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -20)
+	stub := &recordingStub{}
+	processErr := errors.New("write failed")
+
+	fnCalls := 0
+	err := FetchEachObserved(context.Background(), stub, start, nil, func([]Record) error {
+		fnCalls++
+		if fnCalls == 2 {
+			return processErr
+		}
+		return nil
+	})
+	if !errors.Is(err, processErr) {
+		t.Fatalf("expected processErr, got %v", err)
+	}
+	if fnCalls != 2 {
+		t.Fatalf("expected fn to stop after the failing batch (2 calls), got %d", fnCalls)
+	}
+}
+
 func TestFetchEachObservedEmitsLifecycleEvents(t *testing.T) {
 	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -3)
 	stub := &fetchEachStub{callLimit: 1}
