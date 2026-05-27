@@ -3,6 +3,7 @@ package adapters
 import (
 	"bufio"
 	"encoding/csv"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -16,20 +17,21 @@ import (
 )
 
 const (
-	ecbSDMXURL              = "https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A"
-	defaultECBMaxBufferSize = 10 * 1024 * 1024 // 10MB — ECB daily CSV is ~100KB; this is generous headroom.
+	ecbSDMXURL                 = "https://data-api.ecb.europa.eu/service/data/EXR/D..EUR.SP00.A"
+	defaultECBMaxResponseBytes = 10 * 1024 * 1024 // 10MB total — ECB daily CSV is ~100KB; this is generous headroom.
+	maxECBLineBytes            = 1 << 20          // 1MB per CSV line; ECB lines are ~200B.
 )
 
-// ecbBufferCap reads the per-line scanner cap from ECB_MAX_RESPONSE_BYTES,
-// falling back to defaultECBMaxBufferSize. Lazily evaluated so .env-loaded
+// ecbResponseCap reads the total response-size cap from ECB_MAX_RESPONSE_BYTES,
+// falling back to defaultECBMaxResponseBytes. Lazily evaluated so .env-loaded
 // values are honoured.
-func ecbBufferCap() int {
+func ecbResponseCap() int {
 	if v := os.Getenv("ECB_MAX_RESPONSE_BYTES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			return n
 		}
 	}
-	return defaultECBMaxBufferSize
+	return defaultECBMaxResponseBytes
 }
 
 type ECB struct{}
@@ -64,9 +66,12 @@ func (a *ECB) Fetch(after, upto time.Time) ([]provider.Record, error) {
 }
 
 func parseECBStream(r io.Reader) ([]provider.Record, error) {
+	maxBytes := ecbResponseCap()
+	limited := &io.LimitedReader{R: r, N: int64(maxBytes) + 1}
+
 	var records []provider.Record
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), ecbBufferCap())
+	scanner := bufio.NewScanner(limited)
+	scanner.Buffer(make([]byte, 64*1024), maxECBLineBytes)
 
 	var headers []string
 	for scanner.Scan() {
@@ -91,7 +96,13 @@ func parseECBStream(r io.Reader) ([]provider.Record, error) {
 			records = append(records, *rec)
 		}
 	}
-	return records, scanner.Err()
+	if err := scanner.Err(); err != nil {
+		return records, err
+	}
+	if limited.N <= 0 {
+		return nil, fmt.Errorf("ECB response exceeded %d bytes", maxBytes)
+	}
+	return records, nil
 }
 
 func ecbParseRow(headers, row []string) *provider.Record {
