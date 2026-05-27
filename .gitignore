@@ -23,4 +23,7 @@ tmp-config-*/
 # local-only dev stack (per-developer)
 local_test/
 
+# local-only task tracking (per-developer, never committed)
+tasks/
+
 
