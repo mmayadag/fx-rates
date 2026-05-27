@@ -48,7 +48,7 @@ sqlc-generate:
 	sqlc generate
 
 test:
-	$(GO) test ./...
+	$(GO) test -race ./...
 
 coverage:
 	@$(GO) test ./... -cover -count=1 2>&1 | grep -E "^ok|^FAIL|coverage:"
