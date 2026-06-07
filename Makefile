@@ -1,5 +1,5 @@
 GOCACHE_DIR := $(CURDIR)/.gocache
-GO := env GOTOOLCHAIN=go1.26.3 GOCACHE='$(GOCACHE_DIR)' go
+GO := env GOTOOLCHAIN=go1.26.4 GOCACHE='$(GOCACHE_DIR)' go
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 LOCAL_TEST_COMPOSE := docker compose -f local_test/docker-compose.yml
@@ -57,26 +57,26 @@ test-integration: local-db-up
 	@until docker exec $$($(LOCAL_TEST_COMPOSE) ps -q postgres) pg_isready -q; do sleep 1; done
 	@$(ENV_LOADER) \
 	TEST_DATABASE_URL="postgres://$${DB_USER:?DB_USER is required}:$${DB_PASSWORD:?DB_PASSWORD is required}@$${DB_HOST:?DB_HOST is required}:$${DB_PORT:?DB_PORT is required}/$${DB_NAME:?DB_NAME is required}?sslmode=$${DB_SSLMODE:?DB_SSLMODE is required}" \
-	GOTOOLCHAIN=go1.26.3 \
+	GOTOOLCHAIN=go1.26.4 \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go test ./... -count=1 -timeout 120s
 
 run:
 	@$(ENV_LOADER) \
-	GOTOOLCHAIN='go1.26.3' \
+	GOTOOLCHAIN='go1.26.4' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
 
 run-daily:
 	@$(ENV_LOADER) \
 	SYNC_MODE='daily_sync' \
-	GOTOOLCHAIN='go1.26.3' \
+	GOTOOLCHAIN='go1.26.4' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
 
 validate-fx:
 	@$(ENV_LOADER) \
-	GOTOOLCHAIN='go1.26.3' \
+	GOTOOLCHAIN='go1.26.4' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run ./cmd/fx-validate $(ARGS)
 
@@ -95,7 +95,7 @@ local-run:
 	DB_HOST="$${DB_HOST:?DB_HOST is required}" \
 	DB_PORT="$${DB_PORT:?DB_PORT is required}" \
 	DB_SSLMODE="$${DB_SSLMODE:?DB_SSLMODE is required}" \
-	GOTOOLCHAIN='go1.26.3' \
+	GOTOOLCHAIN='go1.26.4' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
 
@@ -108,7 +108,7 @@ local-run-daily:
 	DB_PORT="$${DB_PORT:?DB_PORT is required}" \
 	DB_SSLMODE="$${DB_SSLMODE:?DB_SSLMODE is required}" \
 	SYNC_MODE='daily_sync' \
-	GOTOOLCHAIN='go1.26.3' \
+	GOTOOLCHAIN='go1.26.4' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
 
@@ -132,7 +132,7 @@ local-smoke: local-db-up
 	DB_HOST="$${DB_HOST:?DB_HOST is required}" \
 	DB_PORT="$${DB_PORT:?DB_PORT is required}" \
 	DB_SSLMODE="$${DB_SSLMODE:?DB_SSLMODE is required}" \
-	GOTOOLCHAIN='go1.26.3' \
+	GOTOOLCHAIN='go1.26.4' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
 
@@ -145,6 +145,6 @@ local-smoke-daily: local-db-up
 	DB_PORT="$${DB_PORT:?DB_PORT is required}" \
 	DB_SSLMODE="$${DB_SSLMODE:?DB_SSLMODE is required}" \
 	SYNC_MODE='daily_sync' \
-	GOTOOLCHAIN='go1.26.3' \
+	GOTOOLCHAIN='go1.26.4' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
