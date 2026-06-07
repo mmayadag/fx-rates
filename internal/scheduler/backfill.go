@@ -85,8 +85,13 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	if len(entries) != 1 {
 		return fmt.Errorf("expected exactly 1 registered provider, got %d", len(entries))
 	}
-	entry := entries[0]
+	return backfillEntry(ctx, pool, opts, entries[0])
+}
 
+// backfillEntry runs the backfill for one provider entry. Split from
+// BackfillAll so tests can drive the full run with a stub adapter instead
+// of the registered ECB one.
+func backfillEntry(ctx context.Context, pool *pgxpool.Pool, opts Options, entry registry.Entry) error {
 	var mu sync.Mutex
 	running := make(map[string]runningProvider)
 	var completed int32
@@ -94,6 +99,19 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 	runStart := time.Now()
 
 	slog.Info("backfill: providers queued", "total", 1)
+
+	// Check for cancellation before touching the DB — a cancelled ctx would
+	// make the loads below fail and skip the interrupted audit row.
+	if ctx.Err() != nil {
+		summarySnapshot := snapshotSummary(&mu, summary)
+		logCancellation(ctx, &mu, running, 1, completed)
+		logRunSummary(summarySnapshot, true)
+		emitRunMetric(summarySnapshot, opts.DailySync, time.Since(runStart), "interrupted")
+		// Record an audit row even though the provider never ran, so an
+		// interrupted run is never silently absent from sync_runs.
+		recordSyncRun(pool, BackfillResult{Provider: entry.Key, Status: statusInterrupted}, opts.DailySync, runStart, time.Now().UTC())
+		return ctx.Err()
+	}
 
 	allProviders, err := domain.LoadAll(ctx, pool)
 	if err != nil {
@@ -116,18 +134,6 @@ func BackfillAll(ctx context.Context, pool *pgxpool.Pool, opts Options) error {
 			interval = 30 * time.Second
 		}
 		go emitHeartbeat(ctx, done, &mu, running, 1, &completed, interval)
-	}
-
-	if ctx.Err() != nil {
-		close(done)
-		summarySnapshot := snapshotSummary(&mu, summary)
-		logCancellation(ctx, &mu, running, 1, completed)
-		logRunSummary(summarySnapshot, true)
-		emitRunMetric(summarySnapshot, opts.DailySync, time.Since(runStart), "interrupted")
-		// Record an audit row even though the provider never ran, so an
-		// interrupted run is never silently absent from sync_runs.
-		recordSyncRun(pool, BackfillResult{Provider: entry.Key, Status: statusInterrupted}, opts.DailySync, runStart, time.Now().UTC())
-		return ctx.Err()
 	}
 
 	mu.Lock()
