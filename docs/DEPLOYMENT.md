@@ -46,7 +46,15 @@ Full variable reference is in the [README](../README.md#configuration). Producti
 
 ## Migrations
 
-Migrations are embedded and applied via [golang-migrate](https://github.com/golang-migrate/migrate) when `RUN_MIGRATIONS=true`. To manage them out-of-band, set `RUN_MIGRATIONS=false` and apply the SQL in [`internal/db/migrations/`](../internal/db/migrations/) through your own migration step before the job runs.
+Migrations are embedded and applied via [golang-migrate](https://github.com/golang-migrate/migrate) when `RUN_MIGRATIONS=true`. To manage them out-of-band, set `RUN_MIGRATIONS=false` and run the bundled `fx-migrate` tool — which embeds the same migrations — as a separate deploy step before the job:
+
+```sh
+go run ./cmd/fx-migrate          # apply all pending migrations
+go run ./cmd/fx-migrate -down    # roll back the most recent migration
+# or via Make: make migrate / make migrate-down
+```
+
+`fx-migrate` reads the same `DATABASE_URL` (or split `DB_*`) config as the job and honours `-env-file`.
 
 A crashed migration can leave the `schema_migrations` table marked **dirty**, which blocks every subsequent run. Recovery:
 
