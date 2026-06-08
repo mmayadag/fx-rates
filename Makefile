@@ -6,7 +6,7 @@ LOCAL_TEST_COMPOSE := docker compose -f local_test/docker-compose.yml
 ENV_FILE ?= .env
 ENV_LOADER = set -a; if [ -f "$(ENV_FILE)" ]; then . "$(ENV_FILE)"; fi; set +a;
 
-.PHONY: help build release-build sqlc-generate test coverage test-integration run run-daily validate-fx daily-sync-example local-run local-run-daily local-db-up local-db-down local-db-logs local-db-ps local-smoke local-smoke-daily
+.PHONY: help build release-build sqlc-generate test coverage test-integration run run-daily migrate migrate-down validate-fx daily-sync-example local-run local-run-daily local-db-up local-db-down local-db-logs local-db-ps local-smoke local-smoke-daily
 
 help:
 	@printf '%s\n' \
@@ -18,6 +18,8 @@ help:
 		'make test-integration  - Start local Postgres and run all tests (including DB integration tests)' \
 		'make run               - Load .env and run the ECB sync job' \
 		'make run-daily         - Load .env and force daily_sync mode' \
+		'make migrate           - Load .env and apply all pending migrations' \
+		'make migrate-down      - Load .env and roll back the most recent migration' \
 		'make validate-fx       - Load .env and validate ECB DB rates against ECB reference data' \
 		'make daily-sync-example - Show a daily_sync example with timeout and heartbeat' \
 		'make local-run         - Load .env and run against local_test Postgres' \
@@ -73,6 +75,18 @@ run-daily:
 	GOTOOLCHAIN='go1.26.4' \
 	GOCACHE='$(GOCACHE_DIR)' \
 	go run .
+
+migrate:
+	@$(ENV_LOADER) \
+	GOTOOLCHAIN='go1.26.4' \
+	GOCACHE='$(GOCACHE_DIR)' \
+	go run ./cmd/fx-migrate $(ARGS)
+
+migrate-down:
+	@$(ENV_LOADER) \
+	GOTOOLCHAIN='go1.26.4' \
+	GOCACHE='$(GOCACHE_DIR)' \
+	go run ./cmd/fx-migrate -down $(ARGS)
 
 validate-fx:
 	@$(ENV_LOADER) \

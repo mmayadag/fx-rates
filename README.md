@@ -89,6 +89,7 @@ Loading order: process environment wins, then `.env.local` (developer overrides,
 | `make local-db-up` / `make local-db-down` | Start / stop the local Docker Postgres. |
 | `make local-run` / `make local-run-daily` | Run the sync against the local DB. |
 | `make local-smoke` / `make local-smoke-daily` | `local-db-up` + run, in one command. |
+| `make migrate` / `make migrate-down` | Apply pending migrations / roll back the most recent one out-of-band. |
 | `make validate-fx ARGS='...'` | Run the FX validation CLI (see below). |
 
 ## Validation CLI
@@ -100,6 +101,17 @@ make validate-fx ARGS='-date-from 2024-10-01 -date-to 2024-10-11 -output validat
 ```
 
 Output is a CSV with one row per checked observation, including absolute and relative diffs against the upstream value. Only `-provider ECB` is supported.
+
+## Migration CLI
+
+`cmd/fx-migrate` applies or rolls back the embedded migrations independently of the sync job — useful when you run with `RUN_MIGRATIONS=false` and gate schema changes behind a separate deploy step.
+
+```bash
+make migrate         # apply all pending migrations
+make migrate-down    # roll back the most recent migration
+```
+
+It reads the same `DATABASE_URL` / `DB_*` config as the job and accepts `-env-file`.
 
 ## Scheduling
 
