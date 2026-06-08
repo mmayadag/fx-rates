@@ -1,4 +1,7 @@
-package domain
+// Package repo holds thin repository-style wrappers over the generated sqlc
+// queries — loading providers, last-synced dates, and currency coverage
+// summaries. It is not a domain model layer; the types here mirror DB rows.
+package repo
 
 import (
 	"context"
