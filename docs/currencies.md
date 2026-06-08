@@ -231,7 +231,7 @@ Operational notes:
 Schema references:
 
 - [`internal/db/migrations/003_create_currencies.up.sql`](../internal/db/migrations/003_create_currencies.up.sql)
-- [`internal/domain/coverage.go`](../internal/domain/coverage.go)
+- [`internal/repo/coverage.go`](../internal/repo/coverage.go)
 - [`internal/provider/adapters/ecb.go`](../internal/provider/adapters/ecb.go)
 
 If you want the current locally stored coverage instead of the ECB reference set, query your database directly:

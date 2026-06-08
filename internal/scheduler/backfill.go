@@ -15,7 +15,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/mmayadag/fx-rates/internal/db/sqlcgen"
-	"github.com/mmayadag/fx-rates/internal/domain"
+	"github.com/mmayadag/fx-rates/internal/repo"
 	"github.com/mmayadag/fx-rates/internal/provider"
 	"github.com/mmayadag/fx-rates/internal/registry"
 )
@@ -113,7 +113,7 @@ func backfillEntry(ctx context.Context, pool *pgxpool.Pool, opts Options, entry 
 		return ctx.Err()
 	}
 
-	allProviders, err := domain.LoadAll(ctx, pool)
+	allProviders, err := repo.LoadAll(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("loading providers: %w", err)
 	}
@@ -122,7 +122,7 @@ func backfillEntry(ctx context.Context, pool *pgxpool.Pool, opts Options, entry 
 		coverageStartMap[p.Key] = p.CoverageStart
 	}
 
-	lastSyncedMap, err := domain.GetAllLastSynced(ctx, pool)
+	lastSyncedMap, err := repo.GetAllLastSynced(ctx, pool)
 	if err != nil {
 		return fmt.Errorf("loading last synced dates: %w", err)
 	}
@@ -459,7 +459,7 @@ func processBatch(ctx context.Context, pool *pgxpool.Pool, key string, records [
 	slog.Debug("backfill: inserted rates", "provider", key, "count", inserted)
 
 	if inserted > 0 {
-		if err := domain.UpsertCurrencySummary(ctx, pool, key, uniqueCurrencies(valid)); err != nil {
+		if err := repo.UpsertCurrencySummary(ctx, pool, key, uniqueCurrencies(valid)); err != nil {
 			slog.Warn("backfill: currency summary failed", "provider", key, "err", err)
 		}
 	}
