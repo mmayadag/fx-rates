@@ -1,5 +1,9 @@
 # FX Rates
 
+[![CI](https://github.com/mmayadag/fx-rates/actions/workflows/ci.yml/badge.svg)](https://github.com/mmayadag/fx-rates/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/mmayadag/fx-rates)](https://goreportcard.com/report/github.com/mmayadag/fx-rates)
+![Go 1.26.4](https://img.shields.io/badge/Go-1.26.4-00ADD8?logo=go&logoColor=white)
+
 One-shot Go job that syncs European Central Bank reference rates into PostgreSQL. Designed to run from an external scheduler (k8s `CronJob`, ECS task, cron) — the binary runs to completion and exits.
 
 ## Quick start
